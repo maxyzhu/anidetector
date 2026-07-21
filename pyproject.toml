@@ -1,0 +1,28 @@
+[project]
+name = "anidetector"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.0,<6.0",
+    "djangorestframework>=3.15",
+    "pillow>=10.4",
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+    "pytorchwildlife>=1.2.0",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "setuptools>=70.0,<81",
+    "supervision>=0.22",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]

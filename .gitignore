@@ -1,0 +1,12 @@
+# Python-generated files
+__pycache__/
+*.pyc
+.env
+db.sqlite3
+/media/
+*.pt
+.pytest_cache/
+.DS_Store
+
+# Virtual environments
+.venv
