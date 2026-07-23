@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detection Results</title>
+  <style>
+    :root { --bg:#0f1115; --card:#181b22; --ink:#e6e8eb; --muted:#8b93a1;
+            --animal:#22c55e; --person:#ef4444; --vehicle:#3b82f6; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+           font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    header { padding:20px 28px; border-bottom:1px solid #23262e; }
+    h1 { margin:0; font-size:18px; font-weight:600; letter-spacing:.2px; }
+    .sub { color:var(--muted); font-size:13px; margin-top:4px; }
+    .filters { padding:16px 28px; display:flex; gap:10px; flex-wrap:wrap; }
+    .filters a { color:var(--ink); text-decoration:none; font-size:13px;
+                 padding:6px 12px; border:1px solid #2a2e37; border-radius:999px; }
+    .filters a:hover { border-color:#3a3f4b; }
+    .grid { padding:16px 28px 40px; display:grid;
+            grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:18px; }
+    .card { background:var(--card); border:1px solid #23262e; border-radius:12px;
+            overflow:hidden; }
+    .card img { width:100%; display:block; background:#000; }
+    .meta { padding:12px 14px; }
+    .row { display:flex; align-items:center; justify-content:space-between; }
+    .id { font-size:12px; color:var(--muted); }
+    .tags { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; }
+    .tag { font-size:11px; padding:3px 8px; border-radius:999px; color:#0b0d10;
+           font-weight:600; }
+    .tag.animal { background:var(--animal); }
+    .tag.person { background:var(--person); }
+    .tag.vehicle{ background:var(--vehicle); }
+    .empty { color:var(--muted); padding:40px 28px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Detection Results</h1>
+    <div class="sub">{{ images|length }} image(s) shown · boxes rendered with supervision</div>
+  </header>
+
+  <div class="filters">
+    <a href="?">Non-blank</a>
+    <a href="?show=all">All (incl. blank)</a>
+    <a href="?category=animal">Animals</a>
+    <a href="?category=person">People</a>
+    <a href="?category=vehicle">Vehicles</a>
+  </div>
+
+  {% if images %}
+  <div class="grid">
+    {% for image in images %}
+    <div class="card">
+      <img src="{% url 'annotated-image' image.id %}" alt="Image {{ image.id }}" loading="lazy">
+      <div class="meta">
+        <div class="row">
+          <span class="id">Image #{{ image.id }}</span>
+          <span class="id">{{ image.width }}×{{ image.height }}</span>
+        </div>
+        <div class="tags">
+          {% for d in image.detections.all %}
+            <span class="tag {{ d.category }}">{{ d.category }} {{ d.confidence|floatformat:2 }}</span>
+          {% empty %}
+            <span class="id">blank frame</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <p class="empty">No images match. Run <code>manage.py ingest &lt;folder&gt;</code> first, or try “All”.</p>
+  {% endif %}
+</body>
+</html>

@@ -32,6 +32,6 @@ def main(image_path: str):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: uv run python scripts/try_model.py scripts/01.webp or <your-image-path>")
+        print("Usage: uv run python scripts/try_model.py example_images/01.webp or <your-image-path>")
         sys.exit(1)
     main(sys.argv[1])

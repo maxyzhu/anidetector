@@ -11,9 +11,9 @@ import numpy as np
 from PIL import Image as PILImage
 
 _CATEGORY_BY_ID = {
-    0: "person",
-    1: "vehicle",
-    2: "animal",
+    0: "animal",
+    1: "person",
+    2: "vehicle",
 }
 
 
@@ -36,7 +36,7 @@ class Detector:
     def __init__(self, device: str = "cpu", version: str="MDV6-yolov9-c"):
         from PytorchWildlife.models import detection as pw_detection
 
-        self._model = pw_detection.MegaDetector(
+        self._model = pw_detection.MegaDetectorV6(
             version=version, pretrained=True, device=device
         )
     
@@ -54,6 +54,7 @@ class Detector:
     
     def _parse_one(self, raw, conf_threshold):
         """Parse a single raw result into a ParsedDetection."""
+        out: list[ParsedDetection] = []
         if not isinstance(raw, dict) or "detections" not in raw:
             raise ValueError(
                 f"Unexpected shape from model result: {type(raw)}; "
@@ -62,8 +63,8 @@ class Detector:
         
         dets = raw["detections"]
         norm_coords = raw.get("normalized_coords")
-        confs = getattr(dets, "confidence". None)
-        class_ids = getattr(dets, "class_id". None)
+        confs = getattr(dets, "confidence", None)
+        class_ids = getattr(dets, "class_id", None)
         if norm_coords is None or confs is None or class_ids is None:
             raise ValueError(
                 "Missing normalized_coords/confidence/class_id; "

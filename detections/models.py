@@ -1,7 +1,7 @@
 from django.db import models
 
 class Image(models.Model):
-    class Status(model.TextChoices):
+    class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         PROCESSED = "processed", "Processed"
         FAILED = "failed", "Failed"
@@ -28,7 +28,7 @@ class Image(models.Model):
 class Detection(models.Model):
     """Bounding box by MegaDetector"""
 
-    class Category(model.TextChoices):
+    class Category(models.TextChoices):
         PERSON = "person", "Person"
         VEHICLE = "vehicle", "Vehicle"
         ANIMAL = "animal", "Animal"
