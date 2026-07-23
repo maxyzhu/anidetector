@@ -1,14 +1,16 @@
-# Wildlife Detector
+# AniDetector
 
-MegaDetector-based image detection pipeline. Ingests a folder of images, runs
-MegaDetectorV6 (via PytorchWildlife), filters blank frames, persists results to
-PostgreSQL, and exposes them over a DRF API + a minimal results page.
+A wildlife detection image processing pipeline.  
+-> Ingests a folder of images  
+-> runs MegaDetectorV6 (via PytorchWildlife)  
+-> filters blank frames  
+-> persists results to PostgreSQL, and exposes them over a DRF API + a minimal results page.  
 
-Stack: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · Pillow ·
-uv · Docker.
+Stack: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · supervision · Pillow · uv · Docker.  
+Celery + Redis (in-developement)  
 
-More to go:
-Celery + Redis (in-developement)
+<img width="1512" height="856" alt="interface" src="https://github.com/user-attachments/assets/bcd97b14-22f7-4edd-8854-9d157dd2eef3" />
+
 
 ## First-time Use
 
@@ -36,11 +38,10 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 ```
 
-Success criterion: `runserver` starts and `migrate` completes against Postgres.
-The model is not touched yet.
+Success criterion: `runserver` starts and `migrate` completes against Postgres.  
+The model is not touched yet.  
 
-The schema lives in `detections/models.py` (`Image`, `Detection`). Migrations
-were generated with `makemigrations`; `migrate` creates the tables.
+The schema lives in `detections/models.py` (`Image`, `Detection`). Migrations were generated with `makemigrations`; `migrate` creates the tables.
 
 **Validate the model in isolation (no Django):**
 ```bash
@@ -48,18 +49,19 @@ uv run python scripts/try_model.py example_images/01.webp
 ```
 
 ## Daily Use
-Read the printed structure of the result, then wire it into the pipeline in
-**Step 0:**
-`docker start` - start docker
-`source .venv\bin\activate` - activate uv environment
-`uv run python manage.py runserver` - start Django
+Read the printed structure of the result, then wire it into the pipeline in  
 
-**Step 1:**
-start another console
-`uv run manage.py ingest <folder>` - Inference all valid images in the folder.
-`uv run manage.py ingest <folder> --retry-failed` - Retry inferencing failed images in the folder.
+**Step 0:**  
+`docker start` - start docker  
+`source .venv\bin\activate` - activate uv environment  
+`uv run python manage.py runserver` - start Django  
 
-**Setp 2:**
-open `http://127.0.0.1/results` to see inference results
-open `http://127.0.0.1/admin` to manage Postgres
-open `http://127.0.0.1/api/images` to see JSON results
+**Step 1:**  
+start another console  
+`uv run manage.py ingest <folder>` - Inference all valid images in the folder.  
+`uv run manage.py ingest <folder> --retry-failed` - Retry inferencing failed images in the folder.  
+
+**Setp 2:**  
+open `http://127.0.0.1/results` to see inference results  
+open `http://127.0.0.1/admin` to manage Postgres  
+open `http://127.0.0.1/api/images` to see JSON results  
