@@ -1,5 +1,7 @@
 """
-python manage.py ingest <folder> - scan -> detect -> filter -> persist
+python manage.py ingest <folder> 
+
+- scan -> detect -> filter -> persist
 
 Pipeline entry point:
 1. Scan the folder for images
@@ -16,12 +18,47 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
 from detections.models import Detection, Image
 
 # Only try to decode formats the model + PIL reliably handle.
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
+# EXIF tags ids.
+_EXIF_DATETIME = 306          # DateTime (top-level IFD)
+_EXIF_OFFSET = 0x8769         # pointer to the Exif sub-IFD
+_EXIF_DATETIME_ORIGINAL = 36867
+_EXIF_DATETIME_DIGITIZED = 36868
+
+def _read_captured_at(path):
+    """Read EXIF capture time as an aware datetime, or None if unavailable.
+
+    Prefers DateTimeOriginal (when the shutter fired) from the Exif sub-IFD,
+    then DateTimeDigitized, then the top-level DateTime. EXIF stores naive local
+    time ("YYYY:MM:DD HH:MM:SS"); we attach the project's TIME_ZONE.
+    """
+    try:
+        from PIL import Image as PILImage
+
+        with PILImage.open(path) as img:
+            exif = img.getexif()
+            raw = exif.get(_EXIF_DATETIME)
+            try:
+                sub = exif.get_ifd(_EXIF_OFFSET)
+                raw = sub.get(_EXIF_DATETIME_ORIGINAL) or sub.get(
+                    _EXIF_DATETIME_DIGITIZED
+                ) or raw
+            except Exception:
+                pass
+        if not raw:
+            return None
+        naive = datetime.strptime(str(raw).strip(), "%Y:%m:%d %H:%M:%S")
+        return timezone.make_aware(naive)
+    except Exception:
+        # Missing/broken EXIF is not fatal — the image is still ingested.
+        return None
+        
 
 class Command(BaseCommand):
     help = "Ingest a folder of images: detect, filter blanks, persist results."
@@ -67,11 +104,23 @@ class Command(BaseCommand):
 
         # Phase 1: register files as pending image rows.
         discovered = 0
+        created = 0
         for file in sorted(folder.rglob("*")):
-            if file.suffix.lower() in _IMAGE_SUFFIXES:
-                Image.objects.get_or_create(path=str(file.resolve()))
-                discovered += 1
-        self.stdout.write(f"Discovered {discovered} image(s).")
+            if file.suffix.lower() not in _IMAGE_SUFFIXES:
+                continue
+            discovered += 1
+
+            resolved = file.resolve()
+            if Image.objects.filter(path=str(resolved)).exists():
+                continue
+            Image.objects.create(
+                path=str(resolved),
+                camera_site=file.parent.name,
+                captured_at=_read_captured_at(file),
+            )
+            created += 1
+
+        self.stdout.write(f"Discovered {discovered} image(s), created {created} image(s).")
 
         # Phase 2: process in batches from pending images.
         statuses = [Image.Status.PENDING]

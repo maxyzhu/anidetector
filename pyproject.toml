@@ -15,6 +15,7 @@ dependencies = [
     "librosa>=0.10",
     "setuptools>=70.0,<81",
     "supervision>=0.22",
+    "speciesnet>=5.0.5",
 ]
 
 [dependency-groups]

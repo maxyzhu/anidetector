@@ -11,6 +11,10 @@ Celery + Redis (in-developement)
 
 <img width="1512" height="856" alt="interface" src="https://github.com/user-attachments/assets/bcd97b14-22f7-4edd-8854-9d157dd2eef3" />
 
+## Roadmap
+1. Add species detection using "SpeciesNet"
+2. Event Clustering
+
 
 ## First-time Use
 

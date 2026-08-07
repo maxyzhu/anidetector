@@ -8,7 +8,9 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["*"] if DEBUG else os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = ["*"] if DEBUG else os.getenv(
+    "DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1"
+).split(",")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -83,3 +85,17 @@ REST_FRAMEWORK = {
 DETECTION_CONFIDENCE_THRESHOLD = float(
     os.getenv("DETECTION_CONFIDENCE_THRESHOLD", "0.2")
 )
+
+# --- SpeciesNet / event pipeline config ---
+# Second-stage species classifier (PyTorch backend, crop-based v4).
+SPECIESNET_MODEL = os.getenv(
+    "SPECIESNET_MODEL", "kaggle:google/speciesnet/pytorch/v4.0.3a/1"
+)
+# Min MegaDetector confidence for an animal box to be sent to the classifier.
+# Distinct from DETECTION_CONFIDENCE_THRESHOLD (which filters blank frames).
+SPECIES_CONF_THRESHOLD = float(os.getenv("SPECIES_CONF_THRESHOLD", "0.2"))
+# Enlarge each bbox by this factor before cropping (1.1 = +10%), clamped to [0, 1].
+CROP_PADDING = float(os.getenv("CROP_PADDING", "1.1"))
+SPECIES_BATCH_SIZE = int(os.getenv("SPECIES_BATCH_SIZE", "16"))
+# Gap larger than this (seconds) at one camera site starts a new event.
+EVENT_GAP_SECONDS = int(os.getenv("EVENT_GAP_SECONDS", "1800"))
