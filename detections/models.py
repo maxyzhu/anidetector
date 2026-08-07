@@ -48,6 +48,7 @@ class Detection(models.Model):
     class Status(models.TextChoices):
         # Species-classification stage status (distinct from Image ingest status).
         PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
         PROCESSED = "processed", "Processed"
         FAILED = "failed", "Failed"
 
@@ -94,9 +95,9 @@ class EventSpecies(models.Model):
     """One row per distinct species detected within an event (multi-species support)."""
 
     event = models.ForeignKey(Event, related_name="species", on_delete=models.CASCADE)
-    category = models.CharField(max_length=255)  # species label (free-text, not the Detection enum)
-    confidence = models.FloatField()  # aggregated (max/mean) over the event's classifications
-    detection_count = models.PositiveIntegerField(default=0)
+    category = models.CharField(max_length=255)  # species label (free-text, not Detection Enum)
+    confidence = models.FloatField()  # aggregated (max) over the event's classifications
+    detection_count = models.PositiveIntegerField(default=0) # number of detections of this species in the event
     representative_image = models.ForeignKey(
         Image, null=True, blank=True, on_delete=models.SET_NULL
     )

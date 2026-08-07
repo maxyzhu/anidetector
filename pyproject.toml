@@ -16,6 +16,8 @@ dependencies = [
     "setuptools>=70.0,<81",
     "supervision>=0.22",
     "speciesnet>=5.0.5",
+    "celery>=5.6.3",
+    "redis>=8.1.0",
 ]
 
 [dependency-groups]
@@ -27,3 +29,4 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
+testpaths = ["tests"]

@@ -9,4 +9,6 @@ urlpatterns = [
     # Template views
     path("results/", template_views.results_page, name="results"),
     path("results/<int:pk>/annotated.png", template_views.annotated_image, name="annotated-image"),
+    path("events/", template_views.events_page, name="events-page"),
+    path("events/<int:pk>/", template_views.event_detail, name="event-detail-page"),
 ]

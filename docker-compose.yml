@@ -1,0 +1,31 @@
+# Values are read from ./.env (Compose auto-loads it); the :-defaults keep it
+# working even before you copy .env.example to .env.
+services:
+  postgres:
+    image: postgres:16
+    container_name: anidetector-pg
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-anidetector}
+      POSTGRES_USER: ${POSTGRES_USER:-anidetector}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anidetector}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anidetector} -d ${POSTGRES_DB:-anidetector}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: anidetector-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:

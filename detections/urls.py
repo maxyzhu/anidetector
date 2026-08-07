@@ -7,4 +7,6 @@ urlpatterns: list[path] = [
     path("images/", views.ImageListView.as_view(), name="image-list"),
     path("images/filtered/", views.ImageFilteredListView.as_view(), name="image-filtered-list"),
     path("images/<int:pk>/", views.ImageDetailView.as_view(), name="image-detail"),
+    path("events/", views.EventListView.as_view(), name="event-list"),
+    path("events/<int:pk>/", views.EventDetailView.as_view(), name="event-detail"),
 ]

@@ -99,3 +99,7 @@ CROP_PADDING = float(os.getenv("CROP_PADDING", "1.1"))
 SPECIES_BATCH_SIZE = int(os.getenv("SPECIES_BATCH_SIZE", "16"))
 # Gap larger than this (seconds) at one camera site starts a new event.
 EVENT_GAP_SECONDS = int(os.getenv("EVENT_GAP_SECONDS", "1800"))
+
+# --- Celery config ---
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")

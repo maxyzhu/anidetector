@@ -1,0 +1,50 @@
+{% extends "detections/base.html" %}
+
+{% block title %}Events{% endblock %}
+{% block heading %}Events{% endblock %}
+{% block subtitle %}{{ events|length }} event(s) · grouped by camera site + capture time{% endblock %}
+{% block nav_events %}active{% endblock %}
+
+{% block styles %}
+  a.cardlink { text-decoration:none; color:inherit; display:block; }
+{% endblock %}
+
+{% block content %}
+  {% if events %}
+  <div class="grid">
+    {% for event in events %}
+    <a class="cardlink" href="{% url 'event-detail-page' event.id %}">
+    <div class="card">
+      {# top species' representative image becomes the card thumbnail #}
+      {% with top=event.species.all|first %}
+        {% if top and top.representative_image %}
+          <img src="{% url 'annotated-image' top.representative_image.id %}"
+               alt="Event {{ event.id }}" loading="lazy">
+        {% endif %}
+      {% endwith %}
+      <div class="meta">
+        <div class="row">
+          <span class="id">Event #{{ event.id }}</span>
+          <span class="id">{{ event.image_count }} img</span>
+        </div>
+        <div class="info">
+          {{ event.camera_site|default:"—" }}
+          {% if event.start_time %} · {{ event.start_time|date:"Y-m-d H:i" }}{% endif %}
+          {% if event.end_time %}–{{ event.end_time|date:"H:i" }}{% endif %}
+        </div>
+        <div class="tags">
+          {% for es in event.species.all %}
+            <span class="tag species">{{ es.category }} {{ es.confidence|floatformat:2 }} ×{{ es.detection_count }}</span>
+          {% empty %}
+            <span class="id">no species yet</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+    <p class="empty">No events yet. Run <code>manage.py cluster</code> after ingesting, then <code>manage.py rollup</code>.</p>
+  {% endif %}
+{% endblock %}

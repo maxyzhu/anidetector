@@ -29,7 +29,7 @@ class Command(BaseCommand):
         )
     
     def handle(self, *args, **opts):
-        gap = timedelta(seconds=setting.EVENT_GAP_SECONDS)
+        gap = timedelta(seconds=settings.EVENT_GAP_SECONDS)
 
         if opts["rebuild"]:
             deleted, _ = Event.objects.all().delete()

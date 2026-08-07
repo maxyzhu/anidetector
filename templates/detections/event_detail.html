@@ -1,0 +1,45 @@
+{% extends "detections/base.html" %}
+
+{% block title %}Event #{{ event.id }}{% endblock %}
+{% block heading %}Event #{{ event.id }}{% endblock %}
+{% block subtitle %}{{ event.camera_site|default:"—" }}{% if event.start_time %} · {{ event.start_time|date:"Y-m-d H:i" }}{% endif %}{% if event.end_time %}–{{ event.end_time|date:"H:i" }}{% endif %} · {{ event.image_count }} image(s){% endblock %}
+{% block nav_events %}active{% endblock %}
+
+{% block content %}
+  <div class="filters">
+    <a href="{% url 'events-page' %}">← All events</a>
+    {% for es in event.species.all %}
+      <span class="tag species">{{ es.category }} {{ es.confidence|floatformat:2 }} ×{{ es.detection_count }}</span>
+    {% empty %}
+      <span class="id">no species rolled up yet</span>
+    {% endfor %}
+  </div>
+
+  {% if event.images.all %}
+  <div class="grid">
+    {% for image in event.images.all %}
+    <div class="card">
+      <img src="{% url 'annotated-image' image.id %}" alt="Image {{ image.id }}" loading="lazy">
+      <div class="meta">
+        <div class="row">
+          <span class="id">Image #{{ image.id }}</span>
+          <span class="id">{% if image.captured_at %}{{ image.captured_at|date:"H:i:s" }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="tags">
+          {% for d in image.detections.all %}
+            <span class="tag {{ d.category }}">{{ d.category }} {{ d.confidence|floatformat:2 }}</span>
+            {% with sp=d.classifications.all|first %}
+              {% if sp %}<span class="tag species">{{ sp.category }} {{ sp.confidence|floatformat:2 }}</span>{% endif %}
+            {% endwith %}
+          {% empty %}
+            <span class="id">blank frame</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <p class="empty">This event has no images.</p>
+  {% endif %}
+{% endblock %}
