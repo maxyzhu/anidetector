@@ -92,6 +92,12 @@ class Command(BaseCommand):
             action="store_true",
             help="Retry failed images.",
         )
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=None,
+            help="Register at most this many new images (handy for profiling).",
+        )
     
     def handle(self, *args, **opts):
         folder = Path(opts["folder"])
@@ -101,6 +107,7 @@ class Command(BaseCommand):
         
         batch_size = opts["batch_size"]
         conf = opts["conf"]
+        limit = opts["limit"]
 
         # Phase 1: register files as pending image rows.
         discovered = 0
@@ -119,6 +126,8 @@ class Command(BaseCommand):
                 captured_at=_read_captured_at(file),
             )
             created += 1
+            if limit and created >= limit:
+                break  # cap registration so profiling touches only N images
 
         self.stdout.write(f"Discovered {discovered} image(s), created {created} image(s).")
 
@@ -134,9 +143,9 @@ class Command(BaseCommand):
         
         self.stdout.write(f"Processing {total} pending images in batches of {batch_size}...")
 
-        from detections.inference import load_image_array, Detector
-        # NOTE: this is a singleton, so we can reuse the same instance for all batches.
-        detector = Detector(device=opts["device"])
+        from detections.inference import load_image_array, get_detector
+        # Cached singleton: reused across batches and across repeated runs in-process.
+        detector = get_detector(device=opts["device"])
 
         processed = 0
         failed = 0

@@ -83,6 +83,20 @@ class Detector:
         
         return out
 
+_detector = None
+
+
+def get_detector(device: str = "cpu", version: str = "MDV6-yolov9-c"):
+    """Cached Detector so repeated runs in one process reuse the loaded model.
+
+    Lets a profiler measure model-load time once, separately from throughput.
+    """
+    global _detector
+    if _detector is None:
+        _detector = Detector(device=device, version=version)
+    return _detector
+
+
 def load_image_array(path):
     """Explicitly read one image to an RGB array, returning (array, width, height)."""
     with PILImage.open(path) as img:
