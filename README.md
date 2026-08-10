@@ -11,8 +11,12 @@ Stack: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · SpeciesNe
 <img width="1512" height="856" alt="interface" src="https://github.com/user-attachments/assets/bcd97b14-22f7-4edd-8854-9d157dd2eef3" />
 
 ## Roadmap
-1. Add species detection using "SpeciesNet"
-2. Event Clustering
+1. Add Celery + Redis, provide Docker Compose Entry (Completed in 2026.07.28)
+2. Add species detection using "SpeciesNet" (Completed in 2026.08.06)
+3. Event Clustering (Completed in 2026.08.06)
+4. Add thermal imaging video decoding and frame extraction. Reframe file tree and take ML core and inference out.
+5. Route image detection into video frame clustering.
+6. Cluster animal action bout from thermal imaging videos.
 
 
 ## First-time Use
