@@ -21,9 +21,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from detections.models import Detection, Image
-
-# Only try to decode formats the model + PIL reliably handle.
-_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+from inference import IMAGE_SUFFIXES
 
 # EXIF tags ids.
 _EXIF_DATETIME = 306          # DateTime (top-level IFD)
@@ -113,7 +111,7 @@ class Command(BaseCommand):
         discovered = 0
         created = 0
         for file in sorted(folder.rglob("*")):
-            if file.suffix.lower() not in _IMAGE_SUFFIXES:
+            if file.suffix.lower() not in IMAGE_SUFFIXES:
                 continue
             discovered += 1
 
@@ -143,7 +141,7 @@ class Command(BaseCommand):
         
         self.stdout.write(f"Processing {total} pending images in batches of {batch_size}...")
 
-        from detections.inference import load_image_array, get_detector
+        from inference import get_detector, load_image_array
         # Cached singleton: reused across batches and across repeated runs in-process.
         detector = get_detector(device=opts["device"])
 

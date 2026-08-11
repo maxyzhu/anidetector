@@ -2,7 +2,8 @@
 
 These avoid the real model weights (a fake classifier is injected) and the real
 broker (Celery runs eagerly), so they are fast and offline. They still exercise
-the real PIL load + bbox padding + DB state machine.
+the real PIL load + DB state machine; bbox padding and result parsing now live in
+the inference package and are covered by test_inference.py.
 """
 
 import pytest
@@ -10,31 +11,29 @@ from PIL import Image as PILImage
 
 from detections import tasks
 from detections.models import Detection, Image, SpeciesClassification
+from inference import SpeciesVote
 
 
 class _FakeClassifier:
-    """Stand-in for SpeciesNetClassifier: no weights, canned predictions."""
+    """Stand-in for inference.Classifier: no weights, canned predictions."""
 
-    def preprocess(self, img, bboxes=None, resize=True):
-        return {"bboxes": bboxes}  # opaque sentinel; batch_predict ignores it
+    def preprocess(self, image, bbox_xyxy, padding=1.0):
+        return bbox_xyxy  # opaque sentinel; predict_batch ignores it
 
-    def batch_predict(self, filepaths, imgs):
+    def predict_batch(self, filepaths, preprocessed):
         return [
-            {
-                "filepath": fp,
-                "classifications": {
-                    "classes": ["Odocoileus virginianus", "Vulpes vulpes"],
-                    "scores": [0.83, 0.10],
-                },
-            }
-            for fp in filepaths
+            [
+                SpeciesVote("Odocoileus virginianus", 0.83),
+                SpeciesVote("Vulpes vulpes", 0.10),
+            ]
+            for _ in filepaths
         ]
 
 
 @pytest.fixture
 def fake_classifier(monkeypatch):
     clf = _FakeClassifier()
-    monkeypatch.setattr(tasks, "get_classifier", lambda device=None: clf)
+    monkeypatch.setattr(tasks, "get_classifier", lambda model, device=None: clf)
     return clf
 
 

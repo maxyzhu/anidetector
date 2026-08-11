@@ -69,7 +69,6 @@ class Command(BaseCommand):
                 connection.creation.destroy_test_db(old_name, verbosity=0)
 
     def _profile(self, opts):
-        from detections.inference import get_detector
         from detections.models import (
             Detection,
             Event,
@@ -77,7 +76,7 @@ class Command(BaseCommand):
             Image,
             SpeciesClassification,
         )
-        from detections.tasks import get_classifier
+        from inference import get_classifier, get_detector
 
         dataset = opts["dataset"]
         device = opts["device"]
@@ -109,7 +108,10 @@ class Command(BaseCommand):
             lambda: call_command("cluster", stdout=sink),
             items_fn=Event.objects.count,
         )
-        stage("SpeciesNet load", lambda: get_classifier(device=device))
+        stage(
+            "SpeciesNet load",
+            lambda: get_classifier(settings.SPECIESNET_MODEL, device=device),
+        )
         stage(
             "classify",
             lambda: call_command("classify_species", batch_size=batch_size,
