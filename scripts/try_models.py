@@ -1,34 +1,42 @@
 """
-Run:  uv run python scripts/try_model.py <path-to-image>
+Run:  uv run python scripts/try_models.py <path-to-image>
 
-Goal: confirm the model loads, runs on one image, and see the exact shape of
-what single_image_detection returns (bbox / category / confidence), so that a
-later failure is unambiguously a *Django* problem, not a *model* problem.
+Goal: confirm the detector loads and runs *through the inference package*, and
+print both the raw PytorchWildlife result and what Detector._parse_one made of
+it — so a later failure is unambiguously a *Django* problem, not a *model*
+problem, and a change in the library's return shape shows up here first.
 """
 
 import sys
+from pathlib import Path
 
-import numpy as np
-from PIL import Image
+# Running a script puts scripts/ on sys.path, not the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from inference import get_detector, load_image_array
+
+CONF = 0.2
+
 
 def main(image_path: str):
-    from PytorchWildlife.models import detection as pw_detection
+    img_arr, width, height = load_image_array(image_path)
+    print(f"loaded {image_path} size=({width}, {height}) arr={img_arr.shape}")
 
-    pil = Image.open(image_path).convert("RGB")
-    img_arr = np.array(pil)
-    print(f"loaded {image_path} size={pil.size} arr={img_arr.shape}")
+    detector = get_detector(device="cpu")
+    print(f"variant={detector.version} licence={detector.licence}")
 
-    detector = pw_detection.MegaDetectorV6(
-        device="cpu", pretrained=True, version="MDV6-yolov9-c"
-    )
+    # Reaching into _model on purpose: seeing the unparsed shape is the point.
+    raw = detector._model.batch_image_detection([img_arr])
+    print("\n--- raw result ---")
+    print(type(raw))
+    print(raw)
 
-    results = detector.single_image_detection(img_arr)
+    parsed = detector.detect_batch([img_arr], conf_threshold=CONF)[0]
+    print(f"\n--- parsed: {len(parsed)} detection(s) at conf >= {CONF} ---")
+    for d in parsed:
+        box = tuple(round(v, 4) for v in d.bbox)
+        print(f"  {d.category:8} {d.confidence:0.3f}  bbox={box}")
 
-    # Print the raw result keys and detections
-    print("\n--- raw result keys ---")
-    print(type(results), list(results.keys()) if hasattr(results, "keys") else results)
-    print("\n--- detections ---")
-    print(results)
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

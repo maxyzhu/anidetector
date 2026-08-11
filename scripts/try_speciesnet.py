@@ -20,46 +20,17 @@ Usage:
 import argparse
 import json
 import sys
+from pathlib import Path
+
+# Running a script puts scripts/ on sys.path, not the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from speciesnet import DEFAULT_MODEL, SpeciesNet
 
-
-def build_instances_dict(paths, country=None, admin1=None):
-    """Wrap a list of image paths into SpeciesNet's instances_dict."""
-    instances = []
-    for p in paths:
-        inst = {"filepath": p}
-        if country:
-            inst["country"] = country
-        if admin1:
-            inst["admin1_region"] = admin1
-        instances.append(inst)
-    return {"instances": instances}
-
-
-def detections_from_megadetector_rows(rows):
-    """
-    Mapping example for production wiring (NOT called by this POC; shows the format).
-    rows: Detection records queried from Postgres, each with at least
-          filepath, bbox_xyxy (absolute pixels), img_w, img_h, confidence, category.
-    Returns SpeciesNet's detections_dict (bbox normalized to [xmin, ymin, w, h]).
-    """
-    by_file = {}
-    for r in rows:
-        x1, y1, x2, y2 = r["bbox_xyxy"]
-        w, h = r["img_w"], r["img_h"]
-        det = {
-            "category": str(r.get("category", "1")),   # "1" = animal
-            "label": r.get("label", "animal"),
-            "conf": float(r["confidence"]),
-            "bbox": [x1 / w, y1 / h, (x2 - x1) / w, (y2 - y1) / h],
-        }
-        by_file.setdefault(r["filepath"], []).append(det)
-    return {
-        "predictions": [
-            {"filepath": fp, "detections": dets} for fp, dets in by_file.items()
-        ]
-    }
+# The dict-shape adapters live in the inference package now, so this script and
+# the Django pipeline cannot drift apart on the format. inference.build_detections_dict
+# is the production counterpart for feeding stored MegaDetector rows in here.
+from inference import build_instances_dict
 
 
 def get_detections(model, instances_dict, detections_json):
