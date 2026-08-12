@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from detections.models import Detection, Image
 from inference import IMAGE_SUFFIXES
+import datetime
 
 # EXIF tags ids.
 _EXIF_DATETIME = 306          # DateTime (top-level IFD)

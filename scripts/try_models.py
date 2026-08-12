@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from inference import get_detector, load_image_array
 
-CONF = 0.2
+CONF = 0.5
 
 
 def main(image_path: str):
@@ -25,8 +25,7 @@ def main(image_path: str):
     detector = get_detector(device="cpu")
     print(f"variant={detector.version} licence={detector.licence}")
 
-    # Reaching into _model on purpose: seeing the unparsed shape is the point.
-    raw = detector._model.batch_image_detection([img_arr])
+    raw = detector.raw_batch([img_arr], CONF)[0]
     print("\n--- raw result ---")
     print(type(raw))
     print(raw)

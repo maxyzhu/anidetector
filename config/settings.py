@@ -82,8 +82,12 @@ REST_FRAMEWORK = {
 }
 
 # Detection thresholds - the "filter blank frames" knob lives here.
+# 0.5, not the 0.2 that suited the old ultralytics variant: RT-DETR is NMS-free
+# and emits 300 queries per image, so its low-confidence tail is noise a YOLO+NMS
+# pipeline never surfaced. On example_images, 0.2 yields 85 boxes against 12
+# before, and every extra animal box is another SpeciesNet call.
 DETECTION_CONFIDENCE_THRESHOLD = float(
-    os.getenv("DETECTION_CONFIDENCE_THRESHOLD", "0.2")
+    os.getenv("DETECTION_CONFIDENCE_THRESHOLD", "0.5")
 )
 
 # --- SpeciesNet / event pipeline config ---
@@ -93,7 +97,7 @@ SPECIESNET_MODEL = os.getenv(
 )
 # Min MegaDetector confidence for an animal box to be sent to the classifier.
 # Distinct from DETECTION_CONFIDENCE_THRESHOLD (which filters blank frames).
-SPECIES_CONF_THRESHOLD = float(os.getenv("SPECIES_CONF_THRESHOLD", "0.2"))
+SPECIES_CONF_THRESHOLD = float(os.getenv("SPECIES_CONF_THRESHOLD", "0.5"))
 # Enlarge each bbox by this factor before cropping (1.1 = +10%), clamped to [0, 1].
 CROP_PADDING = float(os.getenv("CROP_PADDING", "1.1"))
 SPECIES_BATCH_SIZE = int(os.getenv("SPECIES_BATCH_SIZE", "16"))

@@ -9,80 +9,89 @@ Caches are plain module globals, so a Celery worker loads each model once and
 reuses it across tasks. This module reads no Django settings on purpose — the
 caller passes them in, which is what keeps the package importable without Django.
 
-TODO(licence): ultralytics (AGPL-3.0) is pulled in whatever we do, because
+TODO(licence): ultralytics (AGPL-3.0) still gets imported whatever we do, because
 PytorchWildlife's models/detection/__init__.py starts with
-``from .ultralytics_based import *``. Choosing a permissive variant below keeps
-AGPL code off our inference path, but removing the dependency outright means
-dropping PytorchWildlife for ONNX Runtime directly.
+``from .ultralytics_based import *``. No AGPL code runs on our inference path any
+more, but removing the dependency outright means dropping PytorchWildlife for
+ONNX Runtime directly.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
-# version -> (PytorchWildlife loader class, licence of that code path).
-# The loader class matters as much as the weights: the generic MegaDetectorV6
-# runs on ultralytics, which is AGPL-3.0 and viral.
+
+class DetectorVariant(NamedTuple):
+    """How to load one MegaDetector variant, and the licence its code path carries."""
+
+    loader: str        # PytorchWildlife class name
+    licence: str
+
+
 DETECTOR_VARIANTS = {
-    "MDV6-apa-rtdetr-c": ("MegaDetectorV6Apache", "Apache-2.0"),
-    "MDV6-apa-rtdetr-e": ("MegaDetectorV6Apache", "Apache-2.0"),
-    "MDV6-mit-yolov9-c": ("MegaDetectorV6MIT", "MIT"),
-    "MDV6-mit-yolov9-e": ("MegaDetectorV6MIT", "MIT"),
-    # Legacy ultralytics-backed variants.
-    "MDV6-yolov9-c": ("MegaDetectorV6", "AGPL-3.0"),
-    "MDV6-yolov9-e": ("MegaDetectorV6", "AGPL-3.0"),
-    "MDV6-yolov10-c": ("MegaDetectorV6", "AGPL-3.0"),
-    "MDV6-yolov10-e": ("MegaDetectorV6", "AGPL-3.0"),
-    "MDV6-rtdetr-c": ("MegaDetectorV6", "AGPL-3.0"),
+    "MDV6-apa-rtdetr-c": DetectorVariant("MegaDetectorV6Apache", "Apache-2.0"),
+    "MDV6-apa-rtdetr-e": DetectorVariant("MegaDetectorV6Apache", "Apache-2.0"),
+    # WARNING: in PytorchWildlife 1.3.0 YOLOMITBase.single_image_detection calls
+    # _load_model() on every call, so these reload their weights once per image.
+    # Fine for a smoke test, unusable for ingesting a directory.
+    "MDV6-mit-yolov9-c": DetectorVariant("MegaDetectorV6MIT", "MIT"),
+    "MDV6-mit-yolov9-e": DetectorVariant("MegaDetectorV6MIT", "MIT"),
 }
 
 PERMISSIVE_LICENCES = frozenset({"Apache-2.0", "MIT"})
 
-# Unchanged from before the refactor so detections stay byte-identical. Step 1b
-# of the refactor plan flips this to MDV6-apa-rtdetr-e, which does change output
-# (different architecture and weights) and so needs its own commit.
-DEFAULT_DETECTOR_VERSION = "MDV6-yolov9-c"
+# The ultralytics-backed variants (MDV6-yolov9-*, MDV6-yolov10-*, MDV6-rtdetr-c)
+# are deliberately absent, and this table is the only way to reach a detector.
+# They are AGPL-3.0, which is viral — and they lose on speed anyway: their
+# `device` argument is a no-op in PytorchWildlife 1.3.0 (yolov8_base.py leaves
+# `predictor.args.device` commented out with "Will uncomment later"), so they run
+# on CPU whatever you ask for. Measured on an M5 Pro over example_images:
+# 362 ms/img batched, against 84 ms/img for MDV6-apa-rtdetr-e on MPS.
+_non_permissive = {
+    name: variant.licence
+    for name, variant in DETECTOR_VARIANTS.items()
+    if variant.licence not in PERMISSIVE_LICENCES
+}
+if _non_permissive:
+    # A plain raise, not an assert: assertions vanish under `python -O`, and a
+    # licence guard that can be optimised away is not a guard.
+    raise ImportError(
+        f"inference.registry may only offer permissively licenced detector "
+        f"variants, but found {_non_permissive}."
+    )
+del _non_permissive
+
+DEFAULT_DETECTOR_VERSION = "MDV6-apa-rtdetr-e"
 
 _detector = None
 _classifier = None
 
 
 def resolve_detector_variant(version=None):
-    """Validate a detector variant and return (version, loader class, licence).
-
-    Warns rather than raises on an AGPL variant: the project still defaults to
-    one, and failing hard here would break the existing image pipeline.
-    """
+    """Validate a detector variant and return (version, variant, loader class)."""
     version = version or DEFAULT_DETECTOR_VERSION
     try:
-        loader_name, licence = DETECTOR_VARIANTS[version]
+        variant = DETECTOR_VARIANTS[version]
     except KeyError:
         raise ValueError(
             f"Unknown detector variant {version!r}. "
             f"Known variants: {', '.join(sorted(DETECTOR_VARIANTS))}."
         ) from None
 
-    if licence not in PERMISSIVE_LICENCES:
-        logger.warning(
-            "Detector variant %s loads via %s under %s. AGPL-3.0 is viral; "
-            "switch to MDV6-apa-rtdetr-e (Apache-2.0) or MDV6-mit-yolov9-e (MIT) "
-            "before this project is distributed.",
-            version, loader_name, licence,
-        )
-
     # Imported here, not at module scope, so importing this module stays cheap
     # and Django-free.
     from PytorchWildlife.models import detection as pw_detection
 
-    loader = getattr(pw_detection, loader_name, None)
+    loader = getattr(pw_detection, variant.loader, None)
     if loader is None:
         raise ValueError(
-            f"PytorchWildlife has no {loader_name}; the installed version is too "
-            f"old for variant {version!r}."
+            f"PytorchWildlife has no {variant.loader}; the installed version is "
+            f"too old for variant {version!r}."
         )
-    return version, loader, licence
+    return version, variant, loader
 
 
 def get_detector(device="cpu", version=None):

@@ -14,6 +14,7 @@ import pytest
 
 from inference import bbox_to_xywh_padded
 from inference.classifier import _parse_votes
+from inference.detector import _clamp
 from inference.registry import (
     DEFAULT_DETECTOR_VERSION,
     DETECTOR_VARIANTS,
@@ -57,14 +58,31 @@ def test_unknown_variant_is_rejected_without_loading_anything():
         resolve_detector_variant("MDV6-does-not-exist")
 
 
-def test_a_permissively_licenced_variant_is_available():
-    permissive = {
-        v for v, (_loader, licence) in DETECTOR_VARIANTS.items()
-        if licence in PERMISSIVE_LICENCES
+def test_no_variant_carries_a_copyleft_licence():
+    # The table is the only way to reach a detector, so keeping AGPL out of it is
+    # the whole guard. registry.py raises at import if this is ever violated;
+    # this test says so out loud, where someone adding a variant will read it.
+    offenders = {
+        name: v.licence for name, v in DETECTOR_VARIANTS.items()
+        if v.licence not in PERMISSIVE_LICENCES
     }
-    # Step 1b of the refactor plan switches the default to one of these.
-    assert "MDV6-apa-rtdetr-e" in permissive
-    assert "MDV6-mit-yolov9-e" in permissive
+    assert not offenders
+
+
+def test_the_ultralytics_variants_are_not_reachable():
+    # AGPL-3.0, and their device argument is a no-op in PytorchWildlife 1.3.0.
+    with pytest.raises(ValueError, match="Unknown detector variant"):
+        resolve_detector_variant("MDV6-yolov9-c")
+
+
+# --- box normalization ---
+
+
+def test_clamp_keeps_coordinates_inside_the_frame():
+    # RT-DETR does not clip its boxes; measured overshoot was 0.00027.
+    assert _clamp(1.00027) == 1.0
+    assert _clamp(-0.0004) == 0.0
+    assert _clamp(0.42) == 0.42
 
 
 # --- bbox padding (moved out of detections/utils.py) ---

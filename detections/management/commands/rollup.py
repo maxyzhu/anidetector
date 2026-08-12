@@ -15,6 +15,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from detections.models import Event, EventSpecies, SpeciesClassification
+from django.db import transaction
 
 
 class Command(BaseCommand):
