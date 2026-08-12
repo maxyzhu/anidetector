@@ -1,4 +1,7 @@
-"""python manage.py classify_species - run SpeciesNet on pending animal detections."""
+"""python manage.py classify_species - run SpeciesNet on pending animal detections.
+
+A CLI shell around detections.services; --async hands the same work to Celery.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +10,7 @@ import logging
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from detections.models import Detection
-from detections.tasks import classify_pending
+from detections import services
 
 
 class Command(BaseCommand):
@@ -34,27 +36,27 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         logging.basicConfig(level=logging.INFO, format="%(message)s")
+
         if opts["retry_failed"]:
-            n = Detection.objects.filter(
-                status__in=[Detection.Status.FAILED, Detection.Status.PROCESSING],
-                category=Detection.Category.ANIMAL,
-            ).update(status=Detection.Status.PENDING)
-            self.stdout.write(f"Requeued {n} failed/stuck detection(s) to pending.")
-        
+            requeued = services.requeue_failed_detections()
+            self.stdout.write(f"Requeued {requeued} failed/stuck detection(s) to pending.")
+
         if opts["use_async"]:
             from detections.tasks import classify_pending_task
+
             classify_pending_task.delay(
                 batch_size=opts["batch_size"],
                 device=opts["device"],
                 limit=opts["limit"],
             )
             self.stdout.write("Enqueued to Celery.")
-        else:
-            processed, failed = classify_pending(
-                batch_size=opts["batch_size"],
-                device=opts["device"],
-                limit=opts["limit"],
-            )
-            self.stdout.write(
-                self.style.SUCCESS(f"Done. processed={processed} failed={failed}.")
-            )
+            return
+
+        processed, failed = services.classify_pending(
+            batch_size=opts["batch_size"],
+            device=opts["device"],
+            limit=opts["limit"],
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f"Done. processed={processed} failed={failed}.")
+        )

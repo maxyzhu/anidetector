@@ -9,7 +9,7 @@ the inference package and are covered by test_inference.py.
 import pytest
 from PIL import Image as PILImage
 
-from detections import tasks
+from detections import services, tasks
 from detections.models import Detection, Image, SpeciesClassification
 from inference import SpeciesVote
 
@@ -33,7 +33,7 @@ class _FakeClassifier:
 @pytest.fixture
 def fake_classifier(monkeypatch):
     clf = _FakeClassifier()
-    monkeypatch.setattr(tasks, "get_classifier", lambda model, device=None: clf)
+    monkeypatch.setattr(services, "get_classifier", lambda model, device=None: clf)
     return clf
 
 
@@ -62,7 +62,7 @@ def animal_detection(tmp_path):
 
 @pytest.mark.django_db
 def test_classify_pending_writes_species(fake_classifier, animal_detection):
-    processed, failed = tasks.classify_pending(batch_size=8)
+    processed, failed = services.classify_pending(batch_size=8)
 
     assert (processed, failed) == (1, 0)
     animal_detection.refresh_from_db()
@@ -80,7 +80,7 @@ def test_below_threshold_is_not_claimed(fake_classifier, animal_detection):
     animal_detection.confidence = 0.01  # below SPECIES_CONF_THRESHOLD (0.2)
     animal_detection.save(update_fields=["confidence"])
 
-    processed, failed = tasks.classify_pending(batch_size=8)
+    processed, failed = services.classify_pending(batch_size=8)
 
     assert (processed, failed) == (0, 0)
     animal_detection.refresh_from_db()
