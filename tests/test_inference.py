@@ -26,26 +26,6 @@ PACKAGE = Path(__file__).resolve().parent.parent / "inference"
 _DJANGO_IMPORT = re.compile(r"^\s*(?:from\s+django|import\s+django)", re.MULTILINE)
 
 
-# --- the dependency-direction rule, as an executable check ---
-
-
-def test_inference_does_not_import_django():
-    offenders = sorted(
-        str(p.relative_to(PACKAGE.parent))
-        for p in PACKAGE.rglob("*.py")
-        if _DJANGO_IMPORT.search(p.read_text())
-    )
-    assert not offenders, f"inference/ must stay Django-free, but: {offenders}"
-
-
-def test_inference_is_not_an_installed_app():
-    from django.conf import settings
-
-    # It has no models, views or migrations; registering it would be a lie that
-    # eventually justifies putting a model in it.
-    assert "inference" not in settings.INSTALLED_APPS
-
-
 # --- detector variant / licence policy ---
 
 

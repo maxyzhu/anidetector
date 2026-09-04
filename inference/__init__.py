@@ -2,7 +2,7 @@
 
 A plain Python package, not a Django app: no models, no views, no migrations, and
 deliberately no `django` import anywhere inside it. That is what lets the image
-workflow (detections/) and the video workflow (video/) share one copy of the
+workflow (image/) and the video workflow (video/) share one copy of the
 model-loading and inference code instead of growing two that drift apart.
 
 Do not add this to INSTALLED_APPS.

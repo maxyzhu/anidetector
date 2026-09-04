@@ -20,7 +20,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "detections",
+    "core",
+    "image",
+    "video",
 ]
 
 MIDDLEWARE = [
@@ -81,6 +83,7 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 25,
 }
 
+# -- Detection --
 # Detection thresholds - the "filter blank frames" knob lives here.
 # 0.5, not the 0.2 that suited the old ultralytics variant: RT-DETR is NMS-free
 # and emits 300 queries per image, so its low-confidence tail is noise a YOLO+NMS
@@ -90,7 +93,7 @@ DETECTION_CONFIDENCE_THRESHOLD = float(
     os.getenv("DETECTION_CONFIDENCE_THRESHOLD", "0.5")
 )
 
-# --- SpeciesNet / event pipeline config ---
+# -- SpeciesNet / event pipeline config --
 # Second-stage species classifier (PyTorch backend, crop-based v4).
 SPECIESNET_MODEL = os.getenv(
     "SPECIESNET_MODEL", "kaggle:google/speciesnet/pytorch/v4.0.3a/1"
@@ -101,9 +104,46 @@ SPECIES_CONF_THRESHOLD = float(os.getenv("SPECIES_CONF_THRESHOLD", "0.5"))
 # Enlarge each bbox by this factor before cropping (1.1 = +10%), clamped to [0, 1].
 CROP_PADDING = float(os.getenv("CROP_PADDING", "1.1"))
 SPECIES_BATCH_SIZE = int(os.getenv("SPECIES_BATCH_SIZE", "16"))
-# Gap larger than this (seconds) at one camera site starts a new event.
-EVENT_GAP_SECONDS = int(os.getenv("EVENT_GAP_SECONDS", "1800"))
 
-# --- Celery config ---
+# -- Video pipeline --
+# Two independent FPS configs: 
+# 1. Tracking needs higher rate for temporal density or IoU association.
+# 2. Classification needs lower rate, we use N frames per track (NOT rate).
+VIDEO_TRACK_FPS = float(os.getenv("VIDEO_TRACK_FPS", "5"))
+VIDEO_FRAME_PER_TRACK = float(os.getenv("VIDEO_FRAME_PER_TRACK", "10"))
+# Only decode keyframes when filtering empty frames.
+VIDEO_KEYFRAMES_ONLY = os.getenv("VIDEO_KEYFRAMES_ONLY", "0") == "1"
+# Frame offsets for a lost track to stay alive.
+# Tightly coupled to VIDEO_TRACK_FPS: too low fragments tracks and inflates the count;
+# too high merges different animals.
+# TODO: fine-tune it with test datasets and then associate it with VIDEO_TRACK_FPS.
+VIDEO_MAX_AGE_SECONDS = int(os. getenv("VIDEO_MAX_AGE_SECONDS", "1"))
+# Consecutive hits before a tentative track is confirmed.
+VIDEO_MIN_HITS = int(os. getenv("VIDEO_MIN_HITS", "3"))
+# IoU threshold for tracking association.
+VIDEO_IOU_THRESHOLD = float(os. getenv("VIDEO_IOU_THRESHOLD", "0.3"))
+# Depth 1 is still a queue. The point is that the seam exists in v1, so M2 swaps
+# the implementation instead of rewriting the pipeline.
+VIDEO_QUEUE_DEPTH = int(os. getenv("VIDEO_QUEUE_DEPTH", "1"))
+
+# -- Celery config --
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+
+
+# -- Cache config --
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": os.getenv("CACHE_URL", "redis://localhost:6379/2"),
+    }
+}
+
+# -- Web image quality config --
+# The representative frame is both what the UI shows and what SpeciesNet crops
+# from, so this width is the one quality knob for track classification: an animal
+# filling 15% of the frame is ~192px here, against a ~480px model input.
+VIDEO_REPRESENTATIVE_WIDTH = int(os.getenv("VIDEO_REPRESENTATIVE_WIDTH", "1280"))
+VIDEO_REPRESENTATIVE_QUALITY = int(os.getenv("VIDEO_REPRESENTATIVE_QUALITY", "85"))
+VIDEO_FRAME_SELECTOR = os.getenv("VIDEO_FRAME_SELECTOR", "area")
+VIDEO_BEHAVIOUR_IMAGE_TTL = int(os.getenv("VIDEO_BEHAVIOUR_IMAGE_TTL", str(24 * 3600)))

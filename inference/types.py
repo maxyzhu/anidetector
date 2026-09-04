@@ -24,8 +24,8 @@ class Frame:
     """
 
     array: np.ndarray          # HWC, RGB
-    timestamp: float           # seconds, relative to the media start
-    frame_index: int
+    timestamp: float           # seconds, float(frame.pts * stream.time_base)
+    frame_index: int           # index of the frame in the decoded sequence
     media_id: str
 
 

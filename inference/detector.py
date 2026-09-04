@@ -1,8 +1,8 @@
 """MegaDetector wrapper: image arrays in, ParsedDetection lists out.
 
 Deliberately knows nothing about files, progress bars or the database. Walking a
-directory and writing rows is the caller's job (detections/services.py after
-Step 2), which is what lets the video pipeline reuse this untouched.
+directory and writing rows is the caller's job (image/services.py), which is what
+lets the video pipeline reuse this untouched.
 """
 
 from __future__ import annotations

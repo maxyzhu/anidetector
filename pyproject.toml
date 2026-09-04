@@ -18,6 +18,8 @@ dependencies = [
     "speciesnet>=5.0.5",
     "celery>=5.6.3",
     "redis>=8.1.0",
+    "av>=18.1.0",
+    "scipy>=1.17.1",
 ]
 
 [dependency-groups]

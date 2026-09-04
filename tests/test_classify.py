@@ -7,10 +7,11 @@ the inference package and are covered by test_inference.py.
 """
 
 import pytest
+from django.utils import timezone
 from PIL import Image as PILImage
 
-from detections import services, tasks
-from detections.models import Detection, Image, SpeciesClassification
+from core.models import Deployment, Detection, Image, SpeciesClassification
+from image import services, tasks
 from inference import SpeciesVote
 
 
@@ -42,7 +43,12 @@ def animal_detection(tmp_path):
     """A processed, non-blank image with one animal detection above threshold."""
     path = tmp_path / "img.png"
     PILImage.new("RGB", (32, 32), (120, 120, 120)).save(path)
+    deployment = Deployment.objects.create(
+        camera_id="cam1", location="somewhere", country="USA",
+        start_ts=timezone.now(),
+    )
     image = Image.objects.create(
+        deployment=deployment,
         path=str(path),
         width=32,
         height=32,
@@ -88,11 +94,13 @@ def test_below_threshold_is_not_claimed(fake_classifier, animal_detection):
 
 
 @pytest.mark.django_db
-def test_celery_task_runs_eagerly(fake_classifier, animal_detection):
+def test_celery_task_runs_eagerly(fake_classifier, animal_detection, monkeypatch):
     from config.celery import app
 
-    app.conf.task_always_eager = True  # run inline, no broker needed
-    app.conf.task_eager_propagates = True
+    # Via monkeypatch so eager mode is restored: set directly it leaks into every
+    # test that runs after this file, and inline-runs real tasks there.
+    monkeypatch.setattr(app.conf, "task_always_eager", True)
+    monkeypatch.setattr(app.conf, "task_eager_propagates", True)
 
     result = tasks.classify_pending_task.delay(batch_size=8)
 

@@ -1,7 +1,7 @@
 """Model loading, caching and variant/licence policy — one place for all of it.
 
 Why this file exists: model loading used to sit in two different modules
-(detections/inference.py for MegaDetector, detections/tasks.py for SpeciesNet).
+(one module for MegaDetector, another for SpeciesNet).
 Splitting it per workflow is how two copies drift apart. Everything that decides
 *which* weights get loaded now lives here.
 

@@ -19,3 +19,7 @@
 ## General
 - If something is ambiguous, ask me directly rather than guessing and proceeding.
 - Explain the approach before writing code, not after.
+- Never do git operation. Ask first.
+
+## Code Style
+- When defining a function and want to reduce miscalls, narrower input datatypes is often better than introducing more variables.

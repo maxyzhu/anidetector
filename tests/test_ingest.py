@@ -1,11 +1,10 @@
-"""Tests for the ingest and clustering services.
+"""Tests for the ingest services.
 
 The detector is faked throughout — no weights, no torch — so these cover the part
 that actually broke historically: which rows get picked up, which get marked
 failed, and whether EXIF time survives the trip into the database.
 """
 
-from datetime import datetime
 from io import StringIO
 
 import pytest
@@ -13,9 +12,11 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from PIL import Image as PILImage
 
-from detections import services
-from detections.models import Detection, Event, Image
-from detections.services import Phase, cluster_images, ingest_directory, read_captured_at
+from django.utils import timezone
+
+from core.models import Deployment, Detection, Image
+from image import services
+from image.services import Phase, ingest_directory, read_captured_at
 from inference import ParsedDetection
 
 
@@ -57,8 +58,15 @@ def _write_images(folder, count, exif_time=None):
     return paths
 
 
+def _deployment():
+    return Deployment.objects.get_or_create(
+        camera_id="cam1", location="somewhere", country="USA",
+        defaults={"start_ts": timezone.now()},
+    )[0]
+
+
 def _run(folder, **kwargs):
-    return list(ingest_directory(str(folder), **kwargs))
+    return list(ingest_directory(str(folder), _deployment(), **kwargs))
 
 
 # --- registration -----------------------------------------------------------
@@ -176,7 +184,7 @@ def test_nothing_pending_yields_no_detect_events(tmp_path, fake_detector):
 @pytest.mark.django_db
 def test_exif_capture_time_reaches_the_database(tmp_path, fake_detector):
     """Regression: read_captured_at raised inside a blanket except and returned
-    None for every image ever ingested, which left clustering with nothing."""
+    None for every image ever ingested."""
     _write_images(tmp_path, 1, exif_time=lambda i: "2024:03:05 14:22:31")
 
     _run(tmp_path)
@@ -204,47 +212,6 @@ def test_a_malformed_exif_timestamp_is_not_fatal(tmp_path):
     assert read_captured_at(path) is None
 
 
-# --- clustering -------------------------------------------------------------
-
-
-def _image(path, site, when):
-    return Image.objects.create(
-        path=path, camera_site=site, status=Image.Status.PROCESSED,
-        captured_at=datetime.fromisoformat(when),
-    )
-
-
-@pytest.mark.django_db
-def test_a_long_gap_starts_a_new_event(settings):
-    settings.EVENT_GAP_SECONDS = 1800
-    _image("/a/1.jpg", "siteA", "2024-03-05T10:00:00+00:00")
-    _image("/a/2.jpg", "siteA", "2024-03-05T10:05:00+00:00")   # same event
-    _image("/a/3.jpg", "siteA", "2024-03-05T11:00:00+00:00")   # 55 min later
-
-    result = cluster_images()
-
-    assert result.events == 2
-    assert Event.objects.get(image_count=2).camera_site == "siteA"
-
-
-@pytest.mark.django_db
-def test_different_sites_never_share_an_event(settings):
-    settings.EVENT_GAP_SECONDS = 1800
-    _image("/a/1.jpg", "siteA", "2024-03-05T10:00:00+00:00")
-    _image("/b/1.jpg", "siteB", "2024-03-05T10:01:00+00:00")
-
-    assert cluster_images().events == 2
-
-
-@pytest.mark.django_db
-def test_images_without_capture_time_are_counted_as_skipped():
-    Image.objects.create(path="/a/1.jpg", camera_site="siteA")
-
-    result = cluster_images()
-
-    assert (result.events, result.skipped) == (0, 1)
-
-
 # --- the CLI shells ---------------------------------------------------------
 
 
@@ -258,7 +225,7 @@ def _run_command(name, *args, **kwargs):
 def test_ingest_command_reports_both_phases(tmp_path, fake_detector):
     _write_images(tmp_path, 3)
 
-    output = _run_command("ingest", str(tmp_path), batch_size=2)
+    output = _run_command("ingest", str(tmp_path), deployment=_deployment().id, batch_size=2)
 
     assert "Discovered 3 image(s), created 3 image(s)." in output
     assert "3/3 images processed" in output
@@ -268,9 +235,9 @@ def test_ingest_command_reports_both_phases(tmp_path, fake_detector):
 @pytest.mark.django_db
 def test_ingest_command_says_so_when_there_is_nothing_to_do(tmp_path, fake_detector):
     _write_images(tmp_path, 1)
-    _run_command("ingest", str(tmp_path))
+    _run_command("ingest", str(tmp_path), deployment=_deployment().id)
 
-    output = _run_command("ingest", str(tmp_path))
+    output = _run_command("ingest", str(tmp_path), deployment=_deployment().id)
 
     assert "No pending images to process" in output
 
@@ -280,16 +247,4 @@ def test_ingest_command_rejects_a_bad_path(tmp_path):
     # Previously this wrote to stderr and exited 0, so a typo in a script looked
     # like a successful run that found nothing.
     with pytest.raises(CommandError, match="Not a directory"):
-        _run_command("ingest", str(tmp_path / "nope"))
-
-
-@pytest.mark.django_db
-def test_cluster_command_reports_the_result(settings):
-    settings.EVENT_GAP_SECONDS = 1800
-    _image("/a/1.jpg", "siteA", "2024-03-05T10:00:00+00:00")
-    Image.objects.create(path="/a/2.jpg", camera_site="siteA")  # no capture time
-
-    output = _run_command("cluster")
-
-    assert "events=1" in output
-    assert "skipped 1 image(s)" in output
+        _run_command("ingest", str(tmp_path / "nope"), deployment=_deployment().id)
