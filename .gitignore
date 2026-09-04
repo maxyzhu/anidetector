@@ -10,3 +10,7 @@ db.sqlite3
 
 # Virtual environments
 .venv
+
+# Briefs
+VIDEO_INFERENCE_BRIEF.md
+PROJECT_BRIEF.md
