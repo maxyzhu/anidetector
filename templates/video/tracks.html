@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Video Tracks{% endblock %}
+{% block heading %}Video Tracks{% endblock %}
+{% block subtitle %}{{ page.paginator.count }} track(s) · bouts computed from the stored motion signals at the thresholds below{% endblock %}
+{% block nav_video %}active{% endblock %}
+
+{% block styles %}
+  form.filterbar { padding:16px 28px 0; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+  form.filterbar.thresholds { padding-bottom:16px; border-bottom:1px solid #23262e; }
+  form.filterbar label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); }
+  form.filterbar select, form.filterbar input {
+    background:var(--card); color:var(--ink); border:1px solid #2a2e37;
+    border-radius:8px; padding:6px 8px; font-size:13px; }
+  form.filterbar input[type=number] { width:96px; }
+  form.filterbar button {
+    background:var(--species); color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; font-size:13px; cursor:pointer; }
+  form.filterbar a.reset { align-self:center; color:var(--muted); font-size:12px; text-decoration:none; }
+  .noframe { aspect-ratio:16/9; display:flex; align-items:center; justify-content:center;
+             background:#000; color:#4b515e; font-size:12px; }
+  /* The mini activity strip: the track's whole span is the track, active bouts are the bars. */
+  .strip { position:relative; height:8px; margin-top:10px; border-radius:4px;
+           background:#23262e; overflow:hidden; }
+  .strip .bar { position:absolute; top:0; height:100%; background:var(--animal); }
+  .strip.empty { background:#1d2027; }
+  .pager { padding:0 28px 40px; display:flex; gap:14px; align-items:center;
+           font-size:13px; color:var(--muted); }
+  .pager a { color:var(--ink); text-decoration:none; border:1px solid #2a2e37;
+             border-radius:999px; padding:5px 12px; }
+  .error { margin:16px 28px 0; padding:10px 14px; border-radius:8px;
+           background:#2a1416; border:1px solid #5b2126; color:#f2b8bc; font-size:13px; }
+{% endblock %}
+
+{% block content %}
+  <form class="filterbar" method="get">
+    <label>Deployment
+      <select name="deployment">
+        <option value="">Any</option>
+        {% for d in deployments %}
+          <option value="{{ d.id }}" {% if f.deployment == d.id|stringformat:"s" %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Media
+      <select name="media">
+        <option value="">Any</option>
+        {% for m in media_list %}
+          <option value="{{ m.id }}" {% if f.media == m.id|stringformat:"s" %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Species
+      <select name="species">
+        <option value="">Any</option>
+        {% for s in species_list %}
+          <option value="{{ s.value }}" {% if f.species == s.value %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    {% include "video/_threshold_fields.html" %}
+    <button type="submit">Apply</button>
+    <a class="reset" href="{% url 'video-tracks' %}">Reset</a>
+  </form>
+
+  {% if error %}
+    <p class="error">Those thresholds do not describe a hysteresis: {{ error }}</p>
+  {% endif %}
+
+  {% if cards %}
+  <div class="grid">
+    {% for card in cards %}
+    <div class="card">
+      {% comment %}
+      The thresholds travel with the link, or the detail page would recompute the
+      bouts against different ones than the card just showed.
+      {% endcomment %}
+      {% url 'video-track-detail' card.track.id as detail_url %}
+      {% if card.track.rep_detection_id %}
+        <a href="{{ detail_url }}?{{ carried }}">
+          <img src="{% url 'annotated-image' card.track.rep_detection.image_id %}"
+               alt="Track {{ card.track.id }}" loading="lazy">
+        </a>
+      {% else %}
+        <a href="{{ detail_url }}?{{ carried }}" class="noframe">no representative frame</a>
+      {% endif %}
+      <div class="meta">
+        <div class="row">
+          <a class="id" href="{{ detail_url }}?{{ carried }}">Track #{{ card.track.id }}</a>
+          <span class="id">{{ card.activity.start_ts|floatformat:1 }}–{{ card.activity.end_ts|floatformat:1 }}s</span>
+        </div>
+        <div class="info">
+          {{ card.track.media.deployment }} · {{ card.filename }} · {{ card.track.hits }} hits
+        </div>
+        <div class="tags">
+          {% if card.species %}
+            <span class="tag species" title="{{ card.activity.species_label }}">{{ card.species }}</span>
+          {% else %}
+            <span class="id">unclassified</span>
+          {% endif %}
+        </div>
+        <div class="strip{% if not card.bars %} empty{% endif %}">
+          {% for bar in card.bars %}
+            <span class="bar" style="left:{{ bar.left|floatformat:3 }}%;width:{{ bar.width|floatformat:3 }}%"></span>
+          {% endfor %}
+        </div>
+        <div class="info">
+          {% if card.bars %}
+            {{ card.activity.budget.bout_count }} bout(s) ·
+            {{ card.activity.budget.active_seconds|floatformat:1 }}s active ·
+            {{ card.activity.budget.rest_seconds|floatformat:1 }}s rest
+          {% else %}
+            {# an empty strip and a broken strip look identical otherwise #}
+            no active bouts at these thresholds ·
+            {{ card.activity.budget.rest_seconds|floatformat:1 }}s rest
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if page.has_other_pages %}
+  <div class="pager">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&{{ carried }}">Prev</a>{% endif %}
+    <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}&{{ carried }}">Next</a>{% endif %}
+  </div>
+  {% endif %}
+
+  {% elif not error %}
+    <p class="empty">No tracks match. Run <code>manage.py register_video &lt;folder&gt;</code>
+      then <code>manage.py process_video</code>, or loosen the filters.</p>
+  {% endif %}
+{% endblock %}

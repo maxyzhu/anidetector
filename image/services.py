@@ -72,13 +72,15 @@ class IngestProgress:
         return self.done / self.elapsed * 60 if self.elapsed > 0 else 0.0
 
 
-def ingest_directory(folder, deployment, batch_size=8, device="cpu", conf=None,
+def ingest_directory(folder, deployment, batch_size=8, device=None, conf=None,
                      retry_failed=False, limit=None):
     """Scan a folder, register new images, then run the detector over everything pending."""
     folder = Path(folder)
     if not folder.is_dir():
         raise NotADirectoryError(folder)
 
+    # "auto" is resolved by inference when the model loads, not here.
+    device = settings.TORCH_DEVICE if device is None else device
     conf = settings.DETECTION_CONFIDENCE_THRESHOLD if conf is None else conf
 
     started = time.monotonic()
@@ -311,6 +313,7 @@ def classify_pending(batch_size=None, device=None, limit=None):
     batch_size = batch_size or settings.SPECIES_BATCH_SIZE
     padding = settings.CROP_PADDING
     model_version = settings.SPECIESNET_MODEL
+    device = settings.TORCH_DEVICE if device is None else device
 
     # The model name is read from settings here, not inside inference/, so that
     # package stays importable without Django.

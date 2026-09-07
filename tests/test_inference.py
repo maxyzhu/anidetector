@@ -7,7 +7,8 @@ that until someone tries to reuse it from a non-Django context.
 Everything here is offline — no weights are loaded, no model classes constructed.
 """
 
-import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,8 +23,34 @@ from inference.registry import (
     resolve_detector_variant,
 )
 
-PACKAGE = Path(__file__).resolve().parent.parent / "inference"
-_DJANGO_IMPORT = re.compile(r"^\s*(?:from\s+django|import\s+django)", re.MULTILINE)
+ROOT = Path(__file__).resolve().parent.parent
+
+
+# --- purity: what importing this package is allowed to cost ---
+
+
+@pytest.mark.parametrize("heavy", ["torch", "PytorchWildlife", "speciesnet"])
+def test_importing_inference_pulls_in_no_model_framework(heavy):
+    """The package docstring promises torch arrives only when a model is loaded.
+
+    Worth a test rather than a docstring because two things ride on it: 611 ms
+    on every management command (40 ms to import inference, 611 to import
+    torch), and the web process being deployable with no torch installed at all.
+    Both break the moment someone puts a torch import at module scope, or calls
+    something that needs one from an import-time path.
+
+    A subprocess because this session may already have imported torch for
+    another reason.
+    """
+    probe = f"import sys, inference; print({heavy!r} in sys.modules)"
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True, text=True, cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False", (
+        f"importing inference pulled in {heavy}"
+    )
 
 
 # --- detector variant / licence policy ---

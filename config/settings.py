@@ -83,6 +83,14 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 25,
 }
 
+# -- Torch device --
+# "auto" is resolved inside inference's model loaders, at the moment a model is
+# actually loaded, so nothing on the web path imports torch to answer it. Pin it
+# here to override the probe — e.g. TORCH_DEVICE=cpu on a box whose GPU is busy.
+# Auto rather than a hard "cpu" because the alternative is a run far slower than
+# the hardware allows, silently: the detector forward pass is 97% of the loop.
+TORCH_DEVICE = os.getenv("TORCH_DEVICE", "auto")
+
 # -- Detection --
 # Detection thresholds - the "filter blank frames" knob lives here.
 # 0.5, not the 0.2 that suited the old ultralytics variant: RT-DETR is NMS-free
@@ -125,6 +133,27 @@ VIDEO_IOU_THRESHOLD = float(os. getenv("VIDEO_IOU_THRESHOLD", "0.3"))
 # Depth 1 is still a queue. The point is that the seam exists in v1, so M2 swaps
 # the implementation instead of rewriting the pipeline.
 VIDEO_QUEUE_DEPTH = int(os. getenv("VIDEO_QUEUE_DEPTH", "1"))
+
+# -- Tiled detection --
+# The model resizes every input to 640x640 whatever its size, so a 2560x1440
+# frame arrives 4x downsampled while a 1066x900 tile arrives 1.67x — the animal
+# is 2.4x larger in the tile. On the pet set a sleeping cat scored 0.11-0.17
+# whole-frame and 0.53-0.77 on 3x2 tiles: 90% recall against 0%.
+# 2x2 is not enough (47%): wider tiles shrink the animal again.
+VIDEO_TILE_GRID = os.getenv("VIDEO_TILE_GRID", "3x2")
+VIDEO_TILE_OVERLAP = float(os.getenv("VIDEO_TILE_OVERLAP", "0.25"))
+# Use NMS to filter out duplicate boxes.
+VIDEO_TILE_NMS_IOU = float(os.getenv("VIDEO_TILE_NMS_IOU", "0.45"))
+# Tile every Nth sampled frame; 0 disables tiling. Cost is strictly linear in
+# tile count and batching does not help (78-82 ms per tile at batch 1 through
+# 6), so frequency is the only lever: every frame is 6.6x, every 5th is 2.1x.
+# A motionless animal does not need rediscovering more than once a second.
+VIDEO_TILE_EVERY = int(os.getenv("VIDEO_TILE_EVERY", "5"))
+# Whole-frame gate for the frames between tiled passes. Low enough to keep a
+# still animal's track alive (it reads 0.11-0.16 there), and that is all it may
+# do — starting a track still needs DETECTION_CONFIDENCE_THRESHOLD, so a
+# reflection or a query-tail box cannot become one.
+VIDEO_TRACK_MIN_CONFIDENCE = float(os.getenv("VIDEO_TRACK_MIN_CONFIDENCE", "0.10"))
 
 # -- Celery config --
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")

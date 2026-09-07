@@ -150,6 +150,17 @@ def test_a_single_sample_gives_one_zero_length_bout():
     assert bouts[0].duration == 0.0
 
 
+def test_a_zero_length_bout_is_tiled_but_not_counted_as_activity():
+    """Turning active on the last sample tiles a zero-length bout. It has to
+    exist for the spans to abut, and it must not read as an episode."""
+    bouts = _bouts([0.0, 0.0, 1.0], 0.5)
+    budget = activity_budget(bouts)
+
+    assert [(b.active, b.duration) for b in bouts] == [(False, 2.0), (True, 0.0)]
+    assert budget.active_seconds == 0.0
+    assert budget.bout_count == 0
+
+
 # --- the tiling property ----------------------------------------------------
 
 

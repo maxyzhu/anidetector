@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}AniDetector{% endblock %}
+{% block heading %}AniDetector{% endblock %}
+{% block subtitle %}Camera-trap stills and video: detect, track, and identify what walked past{% endblock %}
+{% block nav_home %}active{% endblock %}
+
+{% block styles %}
+  .panel { padding:20px 28px; }
+  .panel h2 { margin:0 0 12px; font-size:13px; font-weight:600; color:var(--muted);
+              text-transform:uppercase; letter-spacing:.6px; }
+  .tiles { display:flex; gap:12px; flex-wrap:wrap; }
+  .tile { background:var(--card); border:1px solid #23262e; border-radius:12px;
+          padding:14px 18px; min-width:120px; }
+  .tile .n { font-size:24px; font-weight:600; }
+  .tile .k { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  pre { background:var(--card); border:1px solid #23262e; border-radius:10px;
+        padding:12px 14px; overflow-x:auto; font-size:12.5px; margin:0 0 10px; }
+  pre .c { color:var(--muted); }
+  .step { font-size:12px; color:var(--muted); margin:0 0 6px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase;
+       letter-spacing:.5px; padding:8px 10px; border-bottom:1px solid #23262e; }
+  td { padding:9px 10px; border-bottom:1px solid #1c1f26; vertical-align:top; }
+  td.folder { color:var(--muted); font-size:12px; word-break:break-all; }
+  .pill { font-size:11px; padding:3px 9px; border-radius:999px; font-weight:600; }
+  .pill.pending    { background:#3a3f4b; color:#cfd4dd; }
+  .pill.processing { background:#3b82f6; color:#fff; }
+  .pill.processed  { background:var(--animal); color:#0b0d10; }
+  .pill.failed     { background:var(--person); color:#fff; }
+  .err { color:#f2b8bc; font-size:11px; margin-top:4px; }
+{% endblock %}
+
+{% block content %}
+  <div class="panel">
+    <div class="tiles">
+      <div class="tile"><div class="n">{{ counts.deployments }}</div><div class="k">deployments</div></div>
+      <div class="tile"><div class="n">{{ counts.videos }}</div><div class="k">videos</div></div>
+      <div class="tile"><div class="n">{{ by_status.processed|default:0 }}</div><div class="k">processed</div></div>
+      <div class="tile"><div class="n">{{ by_status.pending|default:0 }}</div><div class="k">pending</div></div>
+      <div class="tile"><div class="n">{{ counts.images }}</div><div class="k">stills</div></div>
+      <div class="tile"><div class="n">{{ counts.classified }}</div><div class="k">boxes identified</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Getting started</h2>
+
+    {% if not deployment %}
+      <p class="step">A deployment is one camera, at one place, over one stretch of time.
+        Nothing infers it — camera id, location and country are human knowledge — so create it first.</p>
+      <pre>uv run python manage.py shell -c "
+from django.utils import timezone
+from core.models import Deployment
+print(Deployment.objects.create(
+    camera_id='cam1', location='backyard', country='USA',
+    start_ts=timezone.now(),
+).id)"</pre>
+    {% endif %}
+
+    <p class="step">Everything in one command — creates a deployment if you omit
+      <code>--deployment</code>, then registers, processes and identifies:</p>
+    <pre>uv run python manage.py quickstart &lt;folder&gt;{% if deployment %} --deployment {{ deployment_id }}{% endif %}</pre>
+
+    <p class="step">Or step by step, which is what to use when something goes wrong:</p>
+    <pre>uv run python manage.py register_video &lt;folder&gt; --deployment {{ deployment_id }}   <span class="c"># catalogue the files</span>
+uv run python manage.py process_video                          <span class="c"># decode -&gt; tracks + motion</span>
+uv run python manage.py classify_species                       <span class="c"># SpeciesNet on each animal box</span>
+uv run python manage.py activity_report --sensitivity          <span class="c"># bouts across a threshold sweep</span></pre>
+
+    <p class="step">A GPU is picked up on its own — cuda, then mps, then cpu. Pin it
+      with <code>TORCH_DEVICE</code> in <code>.env</code>, or per run with
+      <code>--device</code>. Add <code>--contiguous</code> to <code>register_video</code>
+      only when the files are one recording the camera split up, in filename order.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Registered video ({{ rows|length }})</h2>
+    {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>File</th><th>Folder</th><th>Deployment</th>
+          <th>Duration</th><th>Tracks</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.name }}</td>
+          <td class="folder">{{ row.folder }}</td>
+          <td>{{ row.deployment }}</td>
+          <td>{% if row.duration %}{{ row.duration|floatformat:1 }}s{% else %}—{% endif %}</td>
+          <td>{% if row.status == 'processed' %}{{ row.tracks }}{% else %}—{% endif %}</td>
+          <td>
+            <span class="pill {{ row.status }}">{{ row.status }}</span>
+            {% if row.error %}<div class="err">{{ row.error }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p class="empty" style="padding:0">Nothing registered yet. Run
+        <code>register_video</code> or <code>quickstart</code> above, then reload this page.</p>
+    {% endif %}
+  </div>
+{% endblock %}

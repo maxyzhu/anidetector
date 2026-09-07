@@ -19,8 +19,8 @@ class Command(BaseCommand):
             help="Process at most this many pending videos.",
         )
         parser.add_argument(
-            "--device", type=str, default="cpu",
-            help="Torch device: 'cpu', 'mps', 'cuda' (default 'cpu').",
+            "--device", type=str, default=None,
+            help="Torch device: 'auto', 'cpu', 'mps' or 'cuda'. Defaults to settings.TORCH_DEVICE.",
         )
         parser.add_argument(
             "--track-fps", type=float, default=None,

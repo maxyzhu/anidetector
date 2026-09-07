@@ -21,7 +21,7 @@ class Bout:
 class ActivityBudget:
     active_seconds: float
     rest_seconds: float
-    bout_count: int # active bouts only
+    bout_count: int # active bouts of non-zero length only
 
 
 def displacement_signal(sample: MotionSignal):
@@ -145,5 +145,9 @@ def activity_budget(bouts):
     return ActivityBudget(
         active_seconds=active,
         rest_seconds=rest,
-        bout_count=sum(1 for b in bouts if b.active),
+        # _tile ends the last bout at the last sample, so a track that turns
+        # active on that sample leaves a zero-length bout. It tiles correctly and
+        # contributes no seconds, but counting it as an episode of activity would
+        # inflate every bout count by one whenever a track ends on a rising edge.
+        bout_count=sum(1 for b in bouts if b.active and b.duration > 0),
     )

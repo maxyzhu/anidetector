@@ -13,8 +13,8 @@ Two detection sources:
      (quick smoke test).
 
 Usage:
-    uv run python scripts/try_speciesnet.py example_images/01.webp --threshold 0.5
-    uv run python scripts/try_speciesnet.py img1.jpg img2.jpg -t 0.6 --country USA
+    uv run python golden_value/try_speciesnet.py example_images/01.webp --threshold 0.5
+    uv run python golden_value/try_speciesnet.py img1.jpg img2.jpg -t 0.6 --country USA
 """
 
 import argparse
@@ -22,7 +22,7 @@ import json
 import sys
 from pathlib import Path
 
-# Running a script puts scripts/ on sys.path, not the repo root.
+# Running a script puts golden_value/ on sys.path, not the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from speciesnet import DEFAULT_MODEL, SpeciesNet

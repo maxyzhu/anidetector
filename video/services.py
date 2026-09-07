@@ -47,6 +47,8 @@ import hashlib
 import json
 import math
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,7 +191,7 @@ def _persist(media: Media, finished, samples, picker=None):
             transaction.on_commit(_enqueue_classification)
     return track
 
-def process_media(media: Media, device='cpu', conf=None, track_fps=None,
+def process_media(media: Media, device=None, conf=None, track_fps=None,
                     keyframes_only=None, progress_every=100):
     """Decode one video into tracks and motion signals, yielding VideoProgress.
 
@@ -198,6 +200,8 @@ def process_media(media: Media, device='cpu', conf=None, track_fps=None,
     bounds memory over a night of footage, and it is what makes per-media
     checkpointing possible at all.
     """
+    # torch device; "auto" is resolved by inference when the model loads
+    device = settings.TORCH_DEVICE if device is None else device
     # detector confidence threshold
     conf = settings.DETECTION_CONFIDENCE_THRESHOLD if conf is None else conf
     # targeted track fps
@@ -208,10 +212,24 @@ def process_media(media: Media, device='cpu', conf=None, track_fps=None,
     info = _record_media_info(media)                    # fetch media info
     frame_size = (info.width, info.height)
     detector = get_detector(device=device)              # MegaDetector singleton
+    tile_cols, tile_rows = (
+        int(n) for n in settings.VIDEO_TILE_GRID.split("x")
+    )
+    
+    # A resilient tiling to protect against different camera resolutions.
+    # 640 is the standard Apache MegaDetector model input size. Only tile if
+    # the tile width is at least 640 pixels. Otherwise the detection quality
+    # will degrade due to pixel re-sampling.
+    tile_width = info.width / tile_cols * (1 + settings.VIDEO_TILE_OVERLAP)
+    tile_every = settings.VIDEO_TILE_EVERY if tile_width >= 640 else 0
+
+    # Start a Tracker to record the tracks.
     tracker = Tracker(
         max_age_seconds=settings.VIDEO_MAX_AGE_SECONDS,
         min_hits=settings.VIDEO_MIN_HITS,
         iou_threshold=settings.VIDEO_IOU_THRESHOLD,
+        high_confidence=conf,
+        birth_confidence=conf,  # NOTE: only a tiled hit may start a track
     )
 
     accumulators = {}
@@ -236,12 +254,26 @@ def process_media(media: Media, device='cpu', conf=None, track_fps=None,
             for frame in queue: # FrameQueue.__iter__ -> self._frames
                 frames += 1
                 position = frame.timestamp
+                
+                # Tiles rediscover what the whole frame is too coarse to score.
+                # In between, the weak whole-frame box is all a still animal
+                # leaves, and it is enough to keep its track alive.
+                tiling = tile_every and frames % tile_every == 1
+                if tiling:
+                    found = detector.detect_tiled(
+                        frame.array, conf,
+                        whole_threshold=settings.VIDEO_TRACK_MIN_CONFIDENCE,
+                        grid=(tile_cols, tile_rows),
+                        overlap=settings.VIDEO_TILE_OVERLAP,
+                        nms_iou=settings.VIDEO_TILE_NMS_IOU,
+                    )
+                else:
+                    found = detector.detect_batch(
+                        [frame.array], settings.VIDEO_TRACK_MIN_CONFIDENCE)[0]
 
                 # MegaDetector detects animals and return boxes
                 detections = [
-                    (detected.bbox, detected.confidence)
-                    for detected in detector.detect_batch([frame.array], conf)[0]
-                    if detected.category == "animal"
+                    (d.bbox, d.confidence) for d in found if d.category == "animal"
                 ]
 
                 # Track the frame
@@ -399,8 +431,21 @@ class TrackActivity:
 
 
 @dataclass
+class SweepPoint:
+    """One percentile, resolved to an absolute enter threshold per channel."""
+    percentile: float
+    displacement_enter: float
+    deformation_enter: float
+
+
+@dataclass
 class SensitivityRow:
-    enter_threshold: float
+    # Both the percentile and what it resolved to: a percentile alone is not
+    # reproducible against another dataset, and an absolute alone hides that the
+    # sweep is over the distribution rather than over a fixed grid.
+    percentile: float
+    displacement_enter: float
+    deformation_enter: float
     min_duration: float
     bouts: int
     active_seconds: float
@@ -421,6 +466,38 @@ class Thresholds:
     deformation_exit_threshold: float
     min_duration: float
     max_gap: float
+
+
+# One dict because the API, the results page and the activity_report command
+# must not drift into three answers.
+#
+# Both enters sit at ~p89 of their own channel on the pet set. Per channel and
+# not one number, because deformation is a mean pixel delta that tops out near
+# 0.14 there: the old shared 0.5 put it above its own maximum, so the channel
+# never opened and the OR in _bouts_for_signals was a no-op.
+#
+# CAUTION: 0.30 is inside the detector-jitter band, not above it. A motionless
+# animal was measured at 0.12 body lengths/s mean and 0.30 at p95, so some
+# fraction of these bouts is jitter. The step up from 0.5 is that 0.5 (p98) read
+# a cat visible for 30.8s as never once moving. Deployment-dependent; sweep it.
+THRESHOLD_DEFAULTS = {
+    "displacement_enter_threshold": 0.3, "displacement_exit_threshold": 0.15,
+    "deformation_enter_threshold": 0.02, "deformation_exit_threshold": 0.01,
+    "min_duration": 0.0, "max_gap": 0.0,
+}
+
+
+def thresholds_from(params):
+    """Takes the QueryDict, not the request: DRF's query_params and a plain
+    request.GET are then both valid inputs, and the API and the page cannot drift
+    into two default sets."""
+    values = {}
+    for name, default in THRESHOLD_DEFAULTS.items():
+        try:
+            values[name] = float(params.get(name, default))
+        except (TypeError, ValueError):
+            values[name] = default  # a typo in the form should not 500 the page
+    return Thresholds(**values)
 
 
 def _signals_by_track(tracks: list[Track]):
@@ -491,38 +568,68 @@ def activity_report(tracks: list[Track], thresholds: Thresholds):
     return report
 
 
-def _sweep_point(base: Thresholds, enter: float, min_duration: float,
+def _channel_percentiles(grouped, percentiles):
+    """Resolve each percentile against each channel's own distribution.
+
+    Per channel, not one shared number: deformation is a mean pixel delta that
+    tops out around 0.14 on real footage while displacement runs past 0.8, so a
+    single absolute threshold either kills one channel or floods the other. A
+    sweep over shared absolutes silently measured only displacement.
+    """
+    displacement, deformation = [], []
+    for signals in grouped.values():
+        displacement.extend(displacement_signal(signal) for signal in signals)
+        deformation.extend(deformation_signal(signal) for signal in signals)
+
+    if not displacement:
+        return [SweepPoint(p, 0.0, 0.0) for p in percentiles]
+    return [
+        SweepPoint(
+            p,
+            float(np.percentile(displacement, p)),
+            float(np.percentile(deformation, p)),
+        )
+        for p in percentiles
+    ]
+
+
+def _sweep_point(base: Thresholds, point: SweepPoint, min_duration: float,
                  hysteresis_ratio: float):
-    """One cell of the sweep: both channels move together so the table keeps a
-    single ``enter`` column; everything else is inherited from the base."""
-    exit_threshold = enter * hysteresis_ratio
+    """One cell of the sweep: both channels move to the same percentile, so the
+    table keeps a single column, but to different absolutes because the scales
+    differ. Everything else is inherited from the base."""
     return Thresholds(
-        displacement_enter_threshold=enter,
-        displacement_exit_threshold=exit_threshold,
-        deformation_enter_threshold=enter,
-        deformation_exit_threshold=exit_threshold,
+        displacement_enter_threshold=point.displacement_enter,
+        displacement_exit_threshold=point.displacement_enter * hysteresis_ratio,
+        deformation_enter_threshold=point.deformation_enter,
+        deformation_exit_threshold=point.deformation_enter * hysteresis_ratio,
         min_duration=min_duration,
         max_gap=base.max_gap,
     )
 
 
-def sensitivity_table(tracks: list[Track], base: Thresholds, enter_thresholds,
+def sensitivity_table(tracks: list[Track], base: Thresholds, percentiles,
                       min_durations=(0.0,), hysteresis_ratio=0.5):
     """The figure S9.2 demands: bout count and active time against the threshold
     and the minimum bout duration.
 
-    If active time moves by 3x across a plausible threshold range the output is
-    not usable and that has to be fixed before anything is built on top of it. If
-    it is stable, this table is itself the credibility argument.
+    Swept over percentiles of the observed signals rather than absolutes, because
+    an absolute grid is only meaningful for one camera at one distance. Each row
+    still carries what the percentile resolved to, or the table would not be
+    reproducible anywhere else.
+
+    If active time moves by 3x across a plausible range the output is not usable
+    and that has to be fixed before anything is built on top of it. If it is
+    stable, this table is itself the credibility argument.
 
     hysteresis_ratio is a convenience for sweeping one number: exit sits at that
     fraction of enter. It is not a tuned value.
     """
     grouped = _signals_by_track(tracks)
     rows = []
-    for enter in enter_thresholds:
+    for point in _channel_percentiles(grouped, percentiles):
         for min_duration in min_durations:
-            thresholds = _sweep_point(base, enter, min_duration, hysteresis_ratio)
+            thresholds = _sweep_point(base, point, min_duration, hysteresis_ratio)
             bouts = 0
             active = observed = 0.0
             for track in tracks:
@@ -532,7 +639,10 @@ def sensitivity_table(tracks: list[Track], base: Thresholds, enter_thresholds,
                 bouts += budget.bout_count
                 active += budget.active_seconds
                 observed += budget.active_seconds + budget.rest_seconds
-            rows.append(SensitivityRow(enter, min_duration, bouts, active, observed))
+            rows.append(SensitivityRow(
+                point.percentile, point.displacement_enter, point.deformation_enter,
+                min_duration, bouts, active, observed,
+            ))
     return rows
 
 
@@ -551,10 +661,28 @@ def _fingerprint(track: Track, thresholds: Thresholds, selector_name: str):
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
 def _signals_in_bouts(signals, bouts, active: bool):
-    spans = [(b.start_ts, b.end_ts) for b in bouts if b.active == active]
+    """Samples belonging to one behaviour, over half-open [start, end) spans.
+
+    Bouts abut, so closing both ends put every boundary sample in both
+    behaviours: on one track nine samples were shared, and because one of them
+    was the largest box in the track the area selector returned the same frame
+    for moving and for resting.
+    """
+    spans = [
+        (bout.start_ts, bout.end_ts) for bout in bouts
+        if bout.active == active and bout.duration > 0
+    ]
+    if not spans:
+        return []
+    # The final sample closes the last bout and opens nothing after it, so that
+    # one edge stays inclusive or it would belong to no behaviour at all.
+    final = bouts[-1].end_ts
     return [
         signal for signal in signals
-        if any(start <= signal.ts <= end for start, end in spans)
+        if any(
+            start <= signal.ts < end or (signal.ts == final == end)
+            for start, end in spans
+        )
     ]
 
 def _extract_behaviour_image(track, selector, signals):
@@ -625,7 +753,9 @@ def _tick_step(span, target_ticks=8):
 
 
 def _strip(bouts, active: bool):
-    spans = [b for b in bouts if b.active == active]
+    # Same zero-length bout activity_budget drops: a bar of no width is nothing
+    # to paint, and shipping it would make bout_count disagree with the strip.
+    spans = [b for b in bouts if b.active == active and b.duration > 0]
     return BehaviourStrip(
         active=active,
         spans=[

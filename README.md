@@ -14,7 +14,28 @@ Both persist to PostgreSQL and are exposed over a DRF API plus a minimal results
 Stack: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · SpeciesNet ·
 PyAV · supervision · Pillow · NumPy · Celery + Redis · uv · Docker.
 
-<img width="1512" height="856" alt="interface" src="https://github.com/user-attachments/assets/bcd97b14-22f7-4edd-8854-9d157dd2eef3" />
+<table>
+  <tr>
+    <td align="center">
+      <img src="./asset/home.jpeg" width="400"/><br/>
+      <sub>home</sub>
+    </td>
+    <td align="center">
+      <img src="./asset/image.jpeg" width="400"/><br/>
+      <sub>image</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="./asset/video.jpeg" width="400"/><br/>
+      <sub>video</sub>
+    </td>
+    <td align="center">
+      <img src="./asset/track_detail.jpeg" width="400"/><br/>
+      <sub>track detail</sub>
+    </td>
+  </tr>
+</table>
 
 ## Roadmap
 
@@ -31,20 +52,30 @@ PyAV · supervision · Pillow · NumPy · Celery + Redis · uv · Docker.
    routed into the existing image species queue — *completed in 2026.09.04*
 7. Package split: `core` (models) ← `inference` (no Django) ← `image` / `video`,
    with the dependency arrows enforced by a test — *completed in 2026.09.04*
+8. Measure Detector throughput: A 12 h night takes 5.5 h, with
+   `golden_value/benchmark_hot_path.py` on the pet set (M-series MPS, 5 fps
+   sampling): decode and sampling run at ~325 fps, 60x realtime and 3% of loop
+   time, while the detector forward pass is 88 ms/frame and the other 97%.
+   — *completed in 2026.09.07*
+9. Replace SORT with ByteTrack: keep low-confidence detections for a second
+   association pass, which is where SORT loses animals to partial occlusion.
+   See updates on `tracking.py` — *completed in 2026.09.07*
+10. Pet-set validation run end to end. — *completed in 2026.09.07*
 
 > Event clustering over stills was built and then removed: grouping photos by
 > capture-time gap produced groupings with no biological meaning. Clustering
 > returns in M3, over tracks rather than images.
 
 ### Next
-8. **C++ optimization** of the decode → detect → track hot path; the Python loop
-   is the throughput ceiling on a night of footage.
-9. Replace SORT with **ByteTrack** — keep low-confidence detections for a second
-   association pass, which is where SORT loses animals to partial occlusion.
-10. **TW-FINCH** cluster wildlife behaviors and naming with local VLM.
+11. **Enhance Detector throughput.** Real batching means first fixing upstream's
+   `batch_image_detection`, which divides x by the image *height* and y by the
+   *width*. That leaves the model: quantisation, ONNX Runtime or CoreML, or a
+   smaller variant.
+
+12. **TW-FINCH** cluster wildlife behaviors and naming with local VLM.
    Refer to: https://arxiv.org/abs/2103.11264
-11. Change-point detection over tracks, and event clustering built on it.
-12. Pet-set validation run end to end.
+13. Change-point detection over tracks, and event clustering built on it.
+
 
 ## First-time Use
 
@@ -75,12 +106,20 @@ completes, and `runserver` starts. The schema lives in `core/models.py`
 
 **Validate the detector in isolation (no Django):**
 ```bash
-uv run python scripts/try_model.py example_images/01.webp
+uv run python golden_value/try_models.py example_images/01.webp
 ```
 
 **Validate the SpeciesNet classifier in isolation:**
 ```bash
-uv run python scripts/try_speciesnet.py example_images/01.webp --threshold 0.5
+uv run python golden_value/try_speciesnet.py example_images/01.webp --threshold 0.5
+```
+
+**Measure the decode → detect throughput** (also no Django, no database). The
+recorded run is `golden_value/baseline_mps.json`; `--check` re-runs and fails if
+throughput drops more than 20%, and refuses to compare across devices:
+```bash
+uv run python golden_value/benchmark_hot_path.py <video> --device mps
+uv run python golden_value/benchmark_hot_path.py <video> --device mps --check golden_value/baseline_mps.json
 ```
 
 ## Daily Use

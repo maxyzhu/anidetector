@@ -70,6 +70,35 @@ _detector = None
 _classifier = None
 
 
+def _resolve_device(requested):
+    """CUDA -> MPS -> CPU for "auto"; anything else passes through.
+
+    Private, and called only from the loaders below, because answering it needs
+    torch. This package promises that importing it stays cheap and that torch
+    arrives only when a model is genuinely loaded — 611 ms on every management
+    command, and what lets the web process deploy with no torch installed at
+    all. A public version would let a caller on the web path break both. Anyone
+    who wants to know what was chosen reads ``.device`` off the loaded model.
+    """
+    # None reaches here from callers that let a setting decide and found nothing
+    # set; treat it as auto rather than handing None to torch.
+    if requested and requested != "auto":
+        return requested
+
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+
+    # is_available() is already False on non-Apple builds; it is the attribute
+    # that is missing on older torch.
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+
+    return "cpu"
+
+
 def resolve_detector_variant(version=None):
     """Validate a detector variant and return (version, variant, loader class)."""
     version = version or DEFAULT_DETECTOR_VERSION
@@ -94,7 +123,7 @@ def resolve_detector_variant(version=None):
     return version, variant, loader
 
 
-def get_detector(device="cpu", version=None):
+def get_detector(device="auto", version=None):
     """Cached Detector so repeated runs in one process reuse the loaded model.
 
     Lets a profiler measure model-load time once, separately from throughput.
@@ -103,11 +132,13 @@ def get_detector(device="cpu", version=None):
     if _detector is None:
         from inference.detector import Detector
 
+        device = _resolve_device(device)
+        logger.info("loading detector on %s", device)
         _detector = Detector(device=device, version=version)
     return _detector
 
 
-def get_classifier(model, device=None):
+def get_classifier(model, device="auto"):
     """Cached Classifier (SpeciesNet weights load on first call).
 
     ``model`` is passed in rather than read from Django settings, so this package
@@ -117,6 +148,8 @@ def get_classifier(model, device=None):
     if _classifier is None:
         from inference.classifier import Classifier
 
+        device = _resolve_device(device)
+        logger.info("loading classifier on %s", device)
         _classifier = Classifier(model, device=device)
     return _classifier
 

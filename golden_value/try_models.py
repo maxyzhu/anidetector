@@ -1,5 +1,5 @@
 """
-Run:  uv run python scripts/try_models.py <path-to-image>
+Run:  uv run python golden_value/try_models.py <path-to-image>
 
 Goal: confirm the detector loads and runs *through the inference package*, and
 print both the raw PytorchWildlife result and what Detector._parse_one made of
@@ -10,7 +10,7 @@ problem, and a change in the library's return shape shows up here first.
 import sys
 from pathlib import Path
 
-# Running a script puts scripts/ on sys.path, not the repo root.
+# Running a script puts golden_value/ on sys.path, not the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from inference import get_detector, load_image_array
@@ -39,6 +39,6 @@ def main(image_path: str):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: uv run python scripts/try_models.py example_images/01.webp or <your-image-path>")
+        print("Usage: uv run python golden_value/try_models.py example_images/01.webp or <your-image-path>")
         sys.exit(1)
     main(sys.argv[1])

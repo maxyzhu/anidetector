@@ -256,30 +256,58 @@ class Tracker:
     expressing it that way removes its coupling to the sampling rate, so changing
     VIDEO_TRACK_FPS does not invalidate the tuning.
     """
-    def __init__(self, max_age_seconds=2.0, min_hits=3, iou_threshold=0.3):
+    def __init__(self, max_age_seconds=2.0, min_hits=3, iou_threshold=0.3,
+                high_confidence=0.5, birth_confidence=0.5):
         self.max_age_seconds = max_age_seconds
         self.min_hits = min_hits
         self.iou_threshold = iou_threshold
+        self.high_confidence = high_confidence
+        # Defaults to high_confidence, so an unconfigured Tracker behaves
+        # exactly as it did before the split existed.
+        self.birth_confidence = (
+            high_confidence if birth_confidence is None else birth_confidence
+        )
         self._tracks = []
         self._retired = []
         self._next_id = 1
         self._last_ts = None
+
+    def _associate_subset(self, predicted, detections, track_indices, box_indices):
+        """associate() over a slice of each side, with the indices mapped back."""
+        track_indices, box_indices = list(track_indices), list(box_indices)
+        matches, unmatched_tracks, unmatched_boxes = associate(
+            iou_matrix([predicted[t] for t in track_indices],
+                       [detections[b][0] for b in box_indices]),
+            self.iou_threshold,
+        )
+        return (
+            [(track_indices[r], box_indices[c]) for r, c in matches],
+            [track_indices[t] for t in unmatched_tracks],
+            [box_indices[b] for b in unmatched_boxes],
+        )
     
     def update(self, detections, ts, frame_index):
         """Update the tracker with `(bbox, confidence)` pairs for one frame.
 
-        Confidence is carried in rather than attached afterwards: the boxes that
-        come back out are Kalman-smoothed, so there is nothing left to match a
-        detection against once this returns.
+        ByteTrack: two association passes. confident boxes claim tracks
+        first, then the weak ones fill in for whatever is still unmatched. A
+        motionless animal is a stable but low-confidence box, and a single gate
+        threw it away before the tracker could use it.
         """
         delta_t = 0.0 if self._last_ts is None else ts - self._last_ts
         self._last_ts = ts
 
         boxes = [bbox for bbox, _ in detections]
         predicted = [track.filter.predict(delta_t) for track in self._tracks]
-        matches, unmatched_tracks, unmatched_boxes = associate(
-            iou_matrix(predicted, boxes), self.iou_threshold
+        strong = [i for i, (_, conf) in enumerate(detections) if conf >= self.high_confidence]
+        weak = [i for i, _ in enumerate(detections) if i not in strong]
+        matches, unmatched_tracks, unmatched_strong = self._associate_subset(
+            predicted, detections, range(len(self._tracks)), strong
         )
+        second, unmatched_tracks, unmatched_weak = self._associate_subset(
+            predicted, detections, unmatched_tracks, weak
+        )
+        matches += second
 
         for track_index, box_index in matches: # track_index matches predicted boxes
             track = self._tracks[track_index]
@@ -296,8 +324,10 @@ class Tracker:
         for track_index in unmatched_tracks:
             self._tracks[track_index].time_since_update += delta_t
 
-        for box_index in unmatched_boxes:
+        for box_index in unmatched_strong + unmatched_weak:
             bbox, confidence = detections[box_index]
+            if confidence < self.birth_confidence:
+                continue
             new_track = _LiveTrack(self._next_id, bbox, confidence, ts, frame_index)
             self._tracks.append(new_track)
             self._next_id += 1

@@ -12,5 +12,9 @@ db.sqlite3
 .venv
 
 # Briefs
+REFACTOR_PLAN.md
 VIDEO_INFERENCE_BRIEF.md
 PROJECT_BRIEF.md
+
+# example videos
+example_videos/

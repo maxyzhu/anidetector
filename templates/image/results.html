@@ -1,8 +1,8 @@
-{% extends "image/base.html" %}
+{% extends "base.html" %}
 
 {% block title %}Detection Results{% endblock %}
 {% block heading %}Detection Results{% endblock %}
-{% block subtitle %}{{ images|length }} image(s) shown · boxes rendered with supervision{% endblock %}
+{% block subtitle %}{{ cards|length }} image(s) shown · boxes rendered with supervision{% endblock %}
 {% block nav_results %}active{% endblock %}
 
 {% block styles %}
@@ -37,7 +37,7 @@
       <select name="species">
         <option value="">Any</option>
         {% for s in species_list %}
-          <option value="{{ s }}" {% if f.species == s %}selected{% endif %}>{{ s }}</option>
+          <option value="{{ s.value }}" {% if f.species == s.value %}selected{% endif %}>{{ s.name }}</option>
         {% endfor %}
       </select>
     </label>
@@ -63,26 +63,27 @@
     <a class="reset" href="{% url 'results' %}">Reset</a>
   </form>
 
-  {% if images %}
+  {% if cards %}
   <div class="grid">
-    {% for image in images %}
+    {% for card in cards %}
     <div class="card">
-      <img src="{% url 'annotated-image' image.id %}" alt="Image {{ image.id }}" loading="lazy">
+      <img src="{% url 'annotated-image' card.image.id %}" alt="Image {{ card.image.id }}" loading="lazy">
       <div class="meta">
         <div class="row">
-          <span class="id">Image #{{ image.id }}</span>
-          <span class="id">{{ image.width }}×{{ image.height }}</span>
+          <span class="id">Image #{{ card.image.id }}</span>
+          <span class="id">{{ card.image.width }}×{{ card.image.height }}</span>
         </div>
         <div class="info">
-          {{ image.deployment }}{% if image.captured_at %} · {{ image.captured_at|date:"Y-m-d H:i" }}{% endif %}
+          {{ card.image.deployment }}{% if card.image.captured_at %} · {{ card.image.captured_at|date:"Y-m-d H:i" }}{% endif %}
         </div>
         <div class="tags">
-          {% for d in image.detections.all %}
-            <span class="tag {{ d.category }}">{{ d.category }} {{ d.confidence|floatformat:2 }}</span>
-            {# latest SpeciesNet classification, prefetched in the view (no N+1) #}
-            {% with sp=d.classifications.all|first %}
-              {% if sp %}<span class="tag species">{{ sp.category }} {{ sp.confidence|floatformat:2 }}</span>{% endif %}
-            {% endwith %}
+          {% for box in card.boxes %}
+            <span class="tag {{ box.category }}">{{ box.category }} {{ box.confidence|floatformat:2 }}</span>
+            {# common name on the pill, whole taxonomy path on hover #}
+            {% if box.species %}
+              <span class="tag species" title="{{ box.species_label }}">
+                {{ box.species }} {{ box.species_confidence|floatformat:2 }}</span>
+            {% endif %}
           {% empty %}
             <span class="id">blank frame</span>
           {% endfor %}

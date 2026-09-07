@@ -7,21 +7,70 @@ Two views:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from django.db.models import Prefetch
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 
 from core.models import Deployment, Image, SpeciesClassification
-from core.visualize import annotate_image
+from core.taxonomy import parse_taxon_path
+from core.visualize import annotate_image, species_labels
 
-# Prefetch each detection's SpeciesNet classifications, newest first, so the
-# template's `d.classifications.all|first` is the latest one without extra queries.
+# Prefetch each detection's SpeciesNet classifications, newest first, so only
+# the latest is read and without an extra query per detection.
 _species_pf = Prefetch(
     "detections__classifications",
     queryset=SpeciesClassification.objects.filter(
         source=SpeciesClassification.Source.SPECIESNET
     ).order_by("-created_at"),
 )
+
+
+def _common_name(label):
+    """The stored label is SpeciesNet's whole taxonomy path. The API keeps it; a
+    page has room for the common name. Human annotations are free text and do not
+    parse, so they fall through unchanged."""
+    if not label:
+        return None
+    taxon = parse_taxon_path(label)
+    return taxon.common_name if taxon else label
+
+
+@dataclass
+class Box:
+    """One detection as the gallery shows it: the MegaDetector category, plus
+    the newest species result already reduced to what fits on a pill."""
+    category: str
+    confidence: float
+    species: str | None
+    species_label: str | None      # the whole taxonomy path, for the tooltip
+    species_confidence: float | None
+
+
+@dataclass
+class ImageCard:
+    image: Image
+    boxes: list
+
+
+def _cards(images):
+    """Resolve the species labels here rather than in the template, so the
+    template holds no parsing and the raw label is still available for `title`."""
+    cards = []
+    for image in images:
+        boxes = []
+        for detection in image.detections.all():
+            newest = next(iter(detection.classifications.all()), None)
+            boxes.append(Box(
+                category=detection.category,
+                confidence=detection.confidence,
+                species=_common_name(newest.category) if newest else None,
+                species_label=newest.category if newest else None,
+                species_confidence=newest.confidence if newest else None,
+            ))
+        cards.append(ImageCard(image=image, boxes=boxes))
+    return cards
 
 
 def results_page(request):
@@ -83,17 +132,23 @@ def results_page(request):
 
     # Dropdown option lists for the filter form.
     deployments = Deployment.objects.filter(images__isnull=False).distinct().order_by("camera_id")
-    species_list = (
-        SpeciesClassification.objects.filter(source=SPECIESNET)
-        .values_list("category", flat=True)
-        .distinct()
-        .order_by("category")
+    # The option value stays the stored label — that is what the filter matches
+    # on — while the text shown is the common name. Sorted by that rather than by
+    # the label, whose leading field is a uuid.
+    species_list = sorted(
+        (
+            {"value": label, "name": _common_name(label)}
+            for label in SpeciesClassification.objects.filter(source=SPECIESNET)
+            .values_list("category", flat=True)
+            .distinct()
+        ),
+        key=lambda option: option["name"],
     )
 
     return render(
         request,
         "image/results.html",
-        {"images": qs, "deployments": deployments,
+        {"cards": _cards(qs), "deployments": deployments,
          "species_list": species_list, "f": request.GET},
     )
 

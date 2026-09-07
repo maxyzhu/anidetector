@@ -39,7 +39,7 @@ class Command(BaseCommand):
         parser.add_argument("--batch-size", type=int, default=8)
         parser.add_argument(
             "--device", type=str, default=None,
-            help="Torch device: 'cpu', 'mps', 'cuda' (default: cpu for detector, auto for SpeciesNet).",
+            help="Torch device: 'auto', 'cpu', 'mps' or 'cuda'. Defaults to settings.TORCH_DEVICE.",
         )
         parser.add_argument(
             "--keep-db", action="store_true",

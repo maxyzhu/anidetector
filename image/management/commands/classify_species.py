@@ -20,7 +20,7 @@ class Command(BaseCommand):
         parser.add_argument("--batch-size", type=int, default=settings.SPECIES_BATCH_SIZE)
         parser.add_argument(
             "--device", type=str, default=None,
-            help="Torch device: 'cpu', 'mps', 'cuda' (default: auto-detect).",
+            help="Torch device: 'auto', 'cpu', 'mps' or 'cuda'. Defaults to settings.TORCH_DEVICE.",
         )
         parser.add_argument(
             "--limit", type=int, default=None,

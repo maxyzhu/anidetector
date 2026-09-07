@@ -9,23 +9,8 @@ from rest_framework.views import APIView
 
 from video.models import Track
 from video.services import (
-    Thresholds, labels_by_track, behaviour_images, track_timeline,
+    labels_by_track, behaviour_images, thresholds_from, track_timeline,
 )
-
-_DEFAULTS = {
-    "displacement_enter_threshold": 0.5, "displacement_exit_threshold": 0.25,
-    "deformation_enter_threshold": 0.5, "deformation_exit_threshold": 0.25,
-    "min_duration": 0.0, "max_gap": 0.0,
-}
-
-
-def _thresholds_from(request):
-    """Thresholds are query parameters, matching the activity_report command:
-    they are what you are asking, not a property of the track."""
-    return Thresholds(**{
-        name: float(request.query_params.get(name, default))
-        for name, default in _DEFAULTS.items()
-    })
 
 
 def _representative_url(request, track):
@@ -41,7 +26,7 @@ class TrackDetailView(APIView):
         track = get_object_or_404(
             Track.objects.select_related("media", "rep_detection__image"), pk=pk
         )
-        timeline = track_timeline(track, _thresholds_from(request))
+        timeline = track_timeline(track, thresholds_from(request.query_params))
         return Response({
             "track_id": track.id,
             "species_label": labels_by_track([track])[track.id],
@@ -68,7 +53,9 @@ class BehaviourImageView(APIView):
         if behaviour not in ("active", "rest"):
             raise Http404
         track = get_object_or_404(Track.objects.select_related("media"), pk=pk)
-        payload = behaviour_images(track, _thresholds_from(request))[behaviour == "active"]
+        payload = behaviour_images(
+            track, thresholds_from(request.query_params)
+        )[behaviour == "active"]
         if payload is None:
             raise Http404
         return HttpResponse(payload, content_type="image/jpeg")

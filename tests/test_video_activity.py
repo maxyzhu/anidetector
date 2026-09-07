@@ -213,27 +213,54 @@ def test_the_query_count_does_not_grow_with_the_tracks(
 # --- sensitivity_table ------------------------------------------------------
 
 
+def _mirrored(values):
+    """Both channels carrying the same series.
+
+    The sweep resolves a percentile against each channel's own distribution, so a
+    channel left at a constant 0.0 resolves to 0.0 and — classify being
+    inclusive — marks every sample active, which the OR then spreads to the
+    result. Mirroring makes the OR idempotent, so these tests measure the sweep
+    rather than that degenerate case.
+    """
+    return [(value, value) for value in values]
+
+
 @pytest.mark.django_db
-def test_the_sweep_has_a_row_per_threshold_and_duration(make_track):
-    track = make_track([(1.0, 0.0)] * 4)
+def test_the_sweep_has_a_row_per_percentile_and_duration(make_track):
+    track = make_track(_mirrored([1.0] * 4))
 
     rows = sensitivity_table(
-        [track], _thresholds(), [0.2, 0.5], min_durations=[0.0, 1.0]
+        [track], _thresholds(), [50, 90], min_durations=[0.0, 1.0]
     )
 
     assert len(rows) == 4
-    assert [(r.enter_threshold, r.min_duration) for r in rows] == [
-        (0.2, 0.0), (0.2, 1.0), (0.5, 0.0), (0.5, 1.0)
+    assert [(r.percentile, r.min_duration) for r in rows] == [
+        (50, 0.0), (50, 1.0), (90, 0.0), (90, 1.0)
     ]
 
 
 @pytest.mark.django_db
-def test_raising_the_threshold_reduces_active_time(make_track):
+def test_each_row_reports_what_its_percentile_resolved_to(make_track):
+    """A percentile alone does not transfer to another camera; the absolute it
+    landed on is what makes the table reproducible."""
+    track = make_track([(0.2, 0.02), (0.4, 0.04), (0.6, 0.06), (0.8, 0.08)])
+
+    (low, high) = sensitivity_table([track], _thresholds(), [25, 75])
+
+    assert low.displacement_enter == pytest.approx(0.35)
+    assert low.deformation_enter == pytest.approx(0.035)
+    # Per channel: one shared absolute would have silenced deformation entirely.
+    assert high.displacement_enter == pytest.approx(0.65)
+    assert high.deformation_enter == pytest.approx(0.065)
+
+
+@pytest.mark.django_db
+def test_raising_the_percentile_reduces_active_time(make_track):
     """The regression that matters: the sweep must actually use its own enter
     value rather than the base thresholds for every row."""
-    track = make_track([(0.1, 0.0), (0.4, 0.0), (0.7, 0.0), (1.0, 0.0), (0.4, 0.0)])
+    track = make_track(_mirrored([0.1, 0.4, 0.7, 1.0, 0.4]))
 
-    rows = sensitivity_table([track], _thresholds(), [0.2, 0.5, 0.9])
+    rows = sensitivity_table([track], _thresholds(), [50, 90, 99])
 
     active = [row.active_seconds for row in rows]
     assert active == sorted(active, reverse=True)
@@ -242,9 +269,9 @@ def test_raising_the_threshold_reduces_active_time(make_track):
 
 @pytest.mark.django_db
 def test_the_sweep_totals_across_tracks(make_track):
-    tracks = [make_track([(1.0, 0.0)] * 4) for _ in range(2)]
+    tracks = [make_track(_mirrored([1.0] * 4)) for _ in range(2)]
 
-    (row,) = sensitivity_table(tracks, _thresholds(), [0.5])
+    (row,) = sensitivity_table(tracks, _thresholds(), [50])
 
     assert row.bouts == 2
     assert row.active_seconds == pytest.approx(6.0)
@@ -253,14 +280,19 @@ def test_the_sweep_totals_across_tracks(make_track):
 
 @pytest.mark.django_db
 def test_the_hysteresis_ratio_sets_the_exit_threshold(make_track):
-    # 0.3 sits in the dead band at ratio 0.5 (enter 0.6, exit 0.3) but not at 1.0.
-    track = make_track([(0.7, 0.0), (0.3, 0.0), (0.7, 0.0)])
+    # p50 is 0.8, so 0.5 sits in the dead band at ratio 0.5 (exit 0.4) but not
+    # at 1.0 (exit 0.8).
+    #
+    # The trailing 0.8 is load-bearing: without it the reopened bout starts on
+    # the last sample and is therefore zero-length, which activity_budget does
+    # not count as an episode. Three samples would assert 1 == 2.
+    track = make_track(_mirrored([0.8, 0.5, 0.8, 0.8]))
 
     with_dead_band = sensitivity_table(
-        [track], _thresholds(), [0.6], hysteresis_ratio=0.5
+        [track], _thresholds(), [50], hysteresis_ratio=0.5
     )[0]
     without = sensitivity_table(
-        [track], _thresholds(), [0.6], hysteresis_ratio=1.0
+        [track], _thresholds(), [50], hysteresis_ratio=1.0
     )[0]
 
     assert with_dead_band.bouts == 1
@@ -271,7 +303,7 @@ def test_the_hysteresis_ratio_sets_the_exit_threshold(make_track):
 def test_active_fraction_is_none_when_nothing_was_observed(make_track):
     track = make_track([])
 
-    (row,) = sensitivity_table([track], _thresholds(), [0.5])
+    (row,) = sensitivity_table([track], _thresholds(), [50])
 
     assert row.observed_seconds == 0.0
     assert row.active_fraction is None
@@ -279,8 +311,8 @@ def test_active_fraction_is_none_when_nothing_was_observed(make_track):
 
 @pytest.mark.django_db
 def test_active_fraction_is_the_share_of_observed_time(make_track):
-    track = make_track([(1.0, 0.0), (1.0, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)])
+    track = make_track(_mirrored([1.0, 1.0, 0.0, 0.0, 0.0]))
 
-    (row,) = sensitivity_table([track], _thresholds(), [0.5])
+    (row,) = sensitivity_table([track], _thresholds(), [90])
 
     assert row.active_fraction == pytest.approx(row.active_seconds / 4.0)

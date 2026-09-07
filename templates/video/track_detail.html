@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Track #{{ track.id }}{% endblock %}
+{% block heading %}Track #{{ track.id }}{% endblock %}
+{% block subtitle %}
+  {{ track.media.deployment }} · {{ track.start_ts|floatformat:1 }}–{{ track.end_ts|floatformat:1 }}s
+  · {{ track.hits }} hits{% if species %} · {{ species }}{% endif %}
+{% endblock %}
+{% block nav_video %}active{% endblock %}
+
+{% block styles %}
+  form.filterbar { padding:16px 28px; display:flex; gap:12px; flex-wrap:wrap;
+                   align-items:flex-end; border-bottom:1px solid #23262e; }
+  form.filterbar label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--muted); }
+  form.filterbar input {
+    background:var(--card); color:var(--ink); border:1px solid #2a2e37;
+    border-radius:8px; padding:6px 8px; font-size:13px; width:96px; }
+  form.filterbar button {
+    background:var(--species); color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; font-size:13px; cursor:pointer; }
+  form.filterbar a.reset { align-self:center; color:var(--muted); font-size:12px; text-decoration:none; }
+
+  .panel { padding:20px 28px; }
+  .panel h2 { margin:0 0 12px; font-size:13px; font-weight:600; color:var(--muted);
+              text-transform:uppercase; letter-spacing:.6px; }
+  .rep img { max-width:100%; border-radius:12px; display:block; background:#000; }
+
+  .behaviours { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; }
+  .behaviour { background:var(--card); border:1px solid #23262e; border-radius:12px; overflow:hidden; }
+  .behaviour img { width:100%; display:block; background:#000; }
+  .behaviour .noimg { aspect-ratio:16/9; display:flex; align-items:center;
+                      justify-content:center; background:#000; color:#4b515e; font-size:12px; }
+  .behaviour .meta { padding:12px 14px; }
+  .behaviour .name { font-size:14px; font-weight:600; }
+  .behaviour .name .dot { display:inline-block; width:9px; height:9px; border-radius:50%;
+                          margin-right:7px; vertical-align:middle; }
+  .behaviour .stats { margin-top:6px; font-size:12px; color:var(--muted); }
+
+  /* One shared axis: both strips are the same span, so the bars line up vertically. */
+  .axis { position:relative; height:18px; margin-bottom:2px; }
+  .axis .tick { position:absolute; top:0; font-size:10px; color:var(--muted);
+                transform:translateX(-50%); white-space:nowrap; }
+  .axis .tick::after { content:""; position:absolute; left:50%; top:13px;
+                       width:1px; height:5px; background:#3a3f4b; }
+  .lane { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .lane .label { width:64px; flex:none; font-size:12px; color:var(--muted); text-align:right; }
+  .lane .track-bar { position:relative; flex:1; height:16px; border-radius:4px;
+                     background:#23262e; overflow:hidden; }
+  .lane .track-bar .bar { position:absolute; top:0; height:100%; }
+  .lane.active .bar { background:var(--animal); }
+  .lane.rest .bar { background:#3a4150; }
+  .lane .total { width:120px; flex:none; font-size:12px; color:var(--muted); }
+  .axis-pad { margin-left:76px; margin-right:132px; }
+
+  .error { margin:16px 28px 0; padding:10px 14px; border-radius:8px;
+           background:#2a1416; border:1px solid #5b2126; color:#f2b8bc; font-size:13px; }
+  .back { padding:16px 28px 0; }
+  .back a { color:var(--muted); font-size:13px; text-decoration:none; }
+{% endblock %}
+
+{% block content %}
+  <form class="filterbar" method="get">
+    {% include "video/_threshold_fields.html" %}
+    <button type="submit">Apply</button>
+    <a class="reset" href="{% url 'video-track-detail' track.id %}">Reset</a>
+  </form>
+
+  <div class="back"><a href="{% url 'video-tracks' %}">← all tracks</a></div>
+
+  {% if error %}
+    <p class="error">Those thresholds do not describe a hysteresis: {{ error }}</p>
+  {% endif %}
+
+  {% if timeline %}
+  <div class="panel">
+    <h2>Activity timeline</h2>
+    <div class="axis axis-pad">
+      {% for tick in ticks %}
+        <span class="tick" style="left:{{ tick.left|floatformat:3 }}%">{{ tick.label|floatformat:1 }}s</span>
+      {% endfor %}
+    </div>
+    {% for b in behaviours %}
+    <div class="lane {% if b.active %}active{% else %}rest{% endif %}">
+      <span class="label">{{ b.title }}</span>
+      <span class="track-bar">
+        {% for bar in b.bars %}
+          <span class="bar" style="left:{{ bar.left|floatformat:3 }}%;width:{{ bar.width|floatformat:3 }}%"></span>
+        {% endfor %}
+      </span>
+      <span class="total">
+        {{ b.strip.total_seconds|floatformat:1 }}s · {{ b.strip.bout_count }} bout(s)
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <h2>Representative frame per behaviour</h2>
+    <div class="behaviours">
+      {% for b in behaviours %}
+      <div class="behaviour">
+        {% if b.image %}
+          {# Extracted on demand for these exact thresholds and cached against them. #}
+          <img src="{{ b.image }}" alt="{{ b.title }} frame for track {{ track.id }}" loading="lazy">
+        {% else %}
+          <div class="noimg">no {{ b.title|lower }} bout at these thresholds</div>
+        {% endif %}
+        <div class="meta">
+          <div class="name">
+            <span class="dot" style="background:{% if b.active %}var(--animal){% else %}#3a4150{% endif %}"></span>
+            {{ b.title }}
+          </div>
+          <div class="stats">
+            {{ b.strip.bout_count }} bout(s) ·
+            {{ b.strip.total_seconds|floatformat:1 }}s total ·
+            longest {{ b.strip.longest_seconds|floatformat:1 }}s
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if track.rep_detection_id %}
+  <div class="panel rep">
+    <h2>Representative frame</h2>
+    <img src="{% url 'annotated-image' track.rep_detection.image_id %}"
+         alt="Representative frame for track {{ track.id }}">
+  </div>
+  {% endif %}
+{% endblock %}

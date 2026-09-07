@@ -11,7 +11,9 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from video.models import Track
-from video.services import Thresholds, activity_report, sensitivity_table
+from video.services import (
+    THRESHOLD_DEFAULTS, Thresholds, activity_report, sensitivity_table,
+)
 
 
 class Command(BaseCommand):
@@ -19,15 +21,20 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--media", type=int, default=None, help="Limit to one Media id.")
-        # Defaults sit above the measured noise floor: a motionless animal reads
-        # 0.12 body lengths/s on average and 0.30 at the 95th percentile, so an
-        # enter threshold below that would call detector jitter movement.
-        parser.add_argument("--displacement-enter", type=float, default=0.5)
-        parser.add_argument("--displacement-exit", type=float, default=0.25)
-        parser.add_argument("--deformation-enter", type=float, default=0.5)
-        parser.add_argument("--deformation-exit", type=float, default=0.25)
-        parser.add_argument("--min-duration", type=float, default=0.0)
-        parser.add_argument("--max-gap", type=float, default=0.0)
+        # Defaults come from services so the command, the API and the page cannot
+        # answer differently; the reasoning for the numbers lives there.
+        parser.add_argument("--displacement-enter", type=float,
+                            default=THRESHOLD_DEFAULTS["displacement_enter_threshold"])
+        parser.add_argument("--displacement-exit", type=float,
+                            default=THRESHOLD_DEFAULTS["displacement_exit_threshold"])
+        parser.add_argument("--deformation-enter", type=float,
+                            default=THRESHOLD_DEFAULTS["deformation_enter_threshold"])
+        parser.add_argument("--deformation-exit", type=float,
+                            default=THRESHOLD_DEFAULTS["deformation_exit_threshold"])
+        parser.add_argument("--min-duration", type=float,
+                            default=THRESHOLD_DEFAULTS["min_duration"])
+        parser.add_argument("--max-gap", type=float,
+                            default=THRESHOLD_DEFAULTS["max_gap"])
         parser.add_argument("--json", dest="json_path", default=None)
         parser.add_argument(
             "--sensitivity", action="store_true",
@@ -91,30 +98,43 @@ class Command(BaseCommand):
         ]
 
     def _sensitivity(self, tracks, thresholds):
-        enter_thresholds = [0.2, 0.3, 0.4, 0.5, 0.7, 1.0]
+        percentiles = [50, 70, 80, 90, 95, 99]
         min_durations = [0.0, 1.0, 2.0, 5.0]
-        rows = sensitivity_table(tracks, thresholds, enter_thresholds, min_durations)
+        rows = sensitivity_table(tracks, thresholds, percentiles, min_durations)
 
+        # displ/deform are what the percentile resolved to on this data; without
+        # them the table cannot be reproduced against another deployment.
         self.stdout.write(
-            f"{'enter':>7}{'min_dur':>9}{'bouts':>8}{'active':>10}{'active%':>9}"
+            f"{'pct':>5}{'displ':>8}{'deform':>8}{'min_dur':>9}"
+            f"{'bouts':>7}{'active':>10}{'active%':>9}"
         )
         for row in rows:
             fraction = "" if row.active_fraction is None else f"{row.active_fraction*100:.1f}%"
             self.stdout.write(
-                f"{row.enter_threshold:>7.2f}{row.min_duration:>9.1f}"
-                f"{row.bouts:>8}{row.active_seconds:>9.1f}s{fraction:>9}"
+                f"{row.percentile:>4.0f}%{row.displacement_enter:>8.3f}"
+                f"{row.deformation_enter:>8.3f}{row.min_duration:>9.1f}"
+                f"{row.bouts:>7}{row.active_seconds:>9.1f}s{fraction:>9}"
             )
-        # The number that decides whether any of this is usable.
-        by_threshold = {}
-        for row in rows:
-            if row.min_duration == 0.0:
-                by_threshold[row.enter_threshold] = row.active_seconds
-        if by_threshold:
-            low, high = min(by_threshold.values()), max(by_threshold.values())
-            spread = high / low if low else float("inf")
-            self.stdout.write("")
-            self.stdout.write(
-                f"active time varies {spread:.1f}x across thresholds "
-                f"{min(by_threshold):.2f}-{max(by_threshold):.2f}"
-            )
+        self.stdout.write("")
+        self.stdout.write(self._verdict(rows))
         return [row.__dict__ | {"active_fraction": row.active_fraction} for row in rows]
+
+    def _verdict(self, rows):
+        """The number that decides whether any of this is usable."""
+        active_by_percentile = {
+            row.percentile: row.active_seconds for row in rows if row.min_duration == 0.0
+        }
+        if not active_by_percentile:
+            return "no rows to compare"
+
+        low, high = min(active_by_percentile.values()), max(active_by_percentile.values())
+        span = f"p{min(active_by_percentile):.0f}-p{max(active_by_percentile):.0f}"
+        if low > 0:
+            return f"active time varies {high / low:.1f}x across {span}"
+        # Reporting an infinite spread says nothing; where it dies says where the
+        # usable range ends.
+        dies_at = min(p for p, seconds in active_by_percentile.items() if seconds == 0)
+        return (
+            f"active time reaches 0.0s at p{dies_at:.0f}, so {span} has no finite "
+            f"spread; compare below that percentile"
+        )

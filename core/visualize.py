@@ -11,7 +11,7 @@ import io
 import numpy as np
 import supervision as sv
 from PIL import Image as PILImage
-from taxonomy import parse_taxon_path
+from core.taxonomy import parse_taxon_path
 
 # Per-category colors (BGR-format; supervision takes a ColorPalette).
 _CATEGORY_ORDER = ["animal", "person", "vehicle"]

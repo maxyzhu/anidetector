@@ -43,8 +43,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--device",
             type=str,
-            default="cpu",
-            help="Torch device: 'cpu', 'mps', 'cuda' (default 'cpu').",
+            default=None,
+            help="Torch device: 'auto', 'cpu', 'mps' or 'cuda'. Defaults to settings.TORCH_DEVICE.",
         )
         parser.add_argument(
             "--conf",

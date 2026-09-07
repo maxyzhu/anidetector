@@ -38,7 +38,7 @@ class Detector:
     def raw_batch(self, images, conf_threshold):
         """The unparsed per-image result dicts.
 
-        Public so scripts/try_models.py can show exactly what _parse_one is fed —
+        Public so golden_value/try_models.py can show exactly what _parse_one is fed —
         that diagnostic is the whole reason parsing is quarantined in one place.
         """
         return [self._detect_one(image, conf_threshold) for image in images]
@@ -47,7 +47,7 @@ class Detector:
         """Run inference on image arrays; one ParsedDetection list per image.
 
         NOTE: this parses the CURRENTLY-observed PytorchWildlife return shape.
-        Run scripts/try_models.py first and adjust _parse_one if your installed
+        Run golden_value/try_models.py first and adjust _parse_one if your installed
         version differs — that's exactly why parsing is quarantined here.
         """
         return [
@@ -76,6 +76,40 @@ class Detector:
             for x1, y1, x2, y2 in raw["detections"].xyxy
         ]
         return raw
+    
+    def detect_tiled(self, image, tile_threshold, whole_threshold=None,
+                      grid=(3,2), overlap=0.25, nms_iou=0.45):
+        """The whole frame plus overlapping tiles, merged by IoU.
+
+        Two thresholds because they answer different questions. The tiles are
+        where a still animal becomes scoreable at all, so they carry the gate
+        that is allowed to start a track. The whole frame runs lower and only
+        keeps an existing track alive between tiled passes.
+        """
+        whole_threshold = tile_threshold if whole_threshold is None else whole_threshold
+        height, width = image.shape[:2]
+        found = list(self.detect_batch([image], whole_threshold)[0])
+
+        cols, rows = grid
+        tile_width = int(width / cols * (1 + overlap))
+        tile_height = int(height / rows * (1 + overlap))
+        for row in range(rows):
+            for col in range(cols):
+                left = min(int(col * width / cols), width - tile_width)
+                top = min(int(row * height / rows), height - tile_height)
+                tile = image[top:top+tile_height, left:left+tile_width]
+                actual_height, actual_width = tile.shape[:2]
+                for detection in self.detect_batch([tile], tile_threshold)[0]:
+                    found.append(ParsedDetection(
+                        category=detection.category, 
+                        confidence=detection.confidence,
+                        x1=(left + detection.x1 * actual_width) / width,
+                        y1=(top + detection.y1 * actual_height) / height,
+                        x2=(left + detection.x2 * actual_width) / width,
+                        y2=(top + detection.y2 * actual_height) / height,
+                    ))
+                
+        return _merge(found, nms_iou)
 
     def _parse_one(self, raw, conf_threshold):
         """Parse a single raw result into a ParsedDetection."""
@@ -83,7 +117,7 @@ class Detector:
         if not isinstance(raw, dict) or "detections" not in raw:
             raise ValueError(
                 f"Unexpected shape from model result: {type(raw)}; "
-                "inspect with scripts/try_models.py and update _parse_one."
+                "inspect with golden_value/try_models.py and update _parse_one."
             )
 
         dets = raw["detections"]
@@ -93,7 +127,7 @@ class Detector:
         if norm_coords is None or confs is None or class_ids is None:
             raise ValueError(
                 "Missing normalized_coords/confidence/class_id; "
-                "inspect with scripts/try_models.py and update _parse_one."
+                "inspect with golden_value/try_models.py and update _parse_one."
             )
 
         for box, conf, cid in zip(norm_coords, confs, class_ids):
@@ -117,3 +151,26 @@ def _clamp(value):
     downstream — crop padding, drawing — is entitled to assume 0..1.
     """
     return min(max(float(value), 0.0), 1.0)
+
+def _iou(a, b):
+    left, top = max(a[0], b[0]), max(a[1], b[1])
+    right, bottom = min(a[2], b[2]), min(a[3], b[3])
+    overlap = max(0.0, right - left) * max(0.0, bottom - top)
+    if overlap <= 0.0:
+        return 0.0
+    area = lambda box: max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
+    union = area(a) + area(b) - overlap
+    return overlap / union if union > 0.0 else 0.0
+
+def _merge(detections, iou_threshold):
+    """Overlapping tiles see the same animal twice; keep the most confident."""
+    kept = []
+    for detection in sorted(detections, key=lambda d: -d.confidence):
+        if all(
+            detection.category != other.category or
+            _iou(detection.bbox, other.bbox) < iou_threshold
+            for other in kept
+        ):
+            kept.append(detection)
+    return kept
+

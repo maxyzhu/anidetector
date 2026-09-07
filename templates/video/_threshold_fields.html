@@ -1,0 +1,71 @@
+{% comment %}
+Shared by the track list and the track detail form. Names match the API and the
+activity_report command, so a URL carries between all three.
+
+Each tooltip opens with what raising the value does, because that is the
+question someone actually has with the form in front of them.
+{% endcomment %}
+<label>
+  <span class="help-label">Displ. enter<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and less counts as moving:</b> fewer and shorter active bouts,
+    more rest. Body lengths per second, measured from the box centre between
+    consecutive samples and divided by the box diagonal, so an animal near the
+    camera and the same animal far away read the same.
+  </span></span></span>
+  <input type="number" name="displacement_enter_threshold" step="0.05" min="0"
+         value="{{ f.displacement_enter_threshold }}" placeholder="{{ defaults.displacement_enter_threshold }}">
+</label>
+<label>
+  <span class="help-label">Displ. exit<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and bouts end sooner,</b> so one crossing breaks into more,
+    shorter bouts. Once moving, a track stays moving until displacement falls
+    below this; the gap up to enter is a dead band that keeps a single brief dip
+    from ending a bout. Must not exceed enter.
+  </span></span></span>
+  <input type="number" name="displacement_exit_threshold" step="0.05" min="0"
+         value="{{ f.displacement_exit_threshold }}" placeholder="{{ defaults.displacement_exit_threshold }}">
+</label>
+{# Finer step than displacement: this channel's whole useful range is ~0-0.15. #}
+<label>
+  <span class="help-label">Deform. enter<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and in-place movement stops counting</b> — grooming, sniffing,
+    turning on the spot — which is most of what an animal does at a food bowl.
+    Mean absolute pixel change inside the box, 0 to 1: a different scale from
+    displacement, so 0.02 here is not stricter than 0.3 there. OR-ed with
+    displacement, so either channel alone can open a bout.
+  </span></span></span>
+  <input type="number" name="deformation_enter_threshold" step="0.01" min="0"
+         value="{{ f.deformation_enter_threshold }}" placeholder="{{ defaults.deformation_enter_threshold }}">
+</label>
+<label>
+  <span class="help-label">Deform. exit<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and pixel-change bouts end sooner.</b> The same dead band as
+    Displ. exit, for the deformation channel. Must not exceed enter.
+  </span></span></span>
+  <input type="number" name="deformation_exit_threshold" step="0.01" min="0"
+         value="{{ f.deformation_exit_threshold }}" placeholder="{{ defaults.deformation_exit_threshold }}">
+</label>
+<label>
+  <span class="help-label">Min duration<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and short bouts disappear</b> into whichever bout comes next:
+    fewer bouts, each longer. Watch out — it can push active time <i>up</i> as
+    well as down, because absorbing a short rest turns that rest into active
+    time. Seconds; applied after gap bridging, as the catch-all.
+  </span></span></span>
+  <input type="number" name="min_duration" step="0.5" min="0"
+         value="{{ f.min_duration }}" placeholder="{{ defaults.min_duration }}">
+</label>
+<label>
+  <span class="help-label">Max gap<span class="help" tabindex="0">?<span class="tip">
+    <b>Raise it and active bouts join across longer pauses:</b> fewer bouts,
+    each longer, and more time counted active. Seconds. A rest shorter than this
+    sitting between two active bouts is bridged into one; the domain calls this
+    the bout criterion interval.
+  </span></span></span>
+  <input type="number" name="max_gap" step="0.5" min="0"
+         value="{{ f.max_gap }}" placeholder="{{ defaults.max_gap }}">
+</label>
+<p class="fieldnote">
+  These segment bouts from the stored motion signals at query time. They do not
+  change how many tracks exist — that is decided during processing.
+</p>

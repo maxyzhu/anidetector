@@ -1,0 +1,18 @@
+{
+  "video": "07a5764c43b7b588f089af275e5434a9_wh[16-9]wh_di[BA9649403]di_cn[1]cn_trans.MOV",
+  "video_seconds": 44.24,
+  "frames": 222,
+  "device": "mps",
+  "sample_fps": 5.0,
+  "batch": 1,
+  "detector_load_seconds": 4.360360208898783,
+  "decode_seconds": 0.6822283747605979,
+  "detect_seconds": 19.59610762493685,
+  "total_seconds": 20.278335999697447,
+  "decode_fps": 325.40423150517955,
+  "throughput_fps": 10.947643830505237,
+  "realtime_factor": 2.181638572349332,
+  "detect_ms_per_frame": 88.2707550672831,
+  "detect_share": 0.9663567871263807,
+  "machine": "Darwin arm64"
+}
