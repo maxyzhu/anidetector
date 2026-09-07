@@ -1,18 +1,9 @@
 # AniDetector
 
-A wildlife detection pipeline for camera-trap **stills** and **thermal video**.
+A wildlife detection pipeline to pre-process camera-trap **image** and **video**, helping
+researchers filter out empty frames and roughly cluster behaviors (now with active/reset, 
+future with VLM named clusters).
 
-**Images** -> ingest a folder -> MegaDetectorV6 (via PytorchWildlife) -> filter blank
-frames -> SpeciesNet on each animal box.
-
-**Video** -> register a folder -> decode with PyAV -> sample -> detect -> SORT tracking
--> per-track motion signals -> activity bouts -> a representative frame per track,
-classified by the same SpeciesNet queue the stills go through.
-
-Both persist to PostgreSQL and are exposed over a DRF API plus a minimal results page.
-
-Stack: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · SpeciesNet ·
-PyAV · supervision · Pillow · NumPy · Celery + Redis · uv · Docker.
 
 <table>
   <tr>
@@ -37,65 +28,68 @@ PyAV · supervision · Pillow · NumPy · Celery + Redis · uv · Docker.
   </tr>
 </table>
 
-## Roadmap
 
-### Done
-1. Celery + Redis, Docker Compose entry — *completed in 2026.07.28*
+## Feature
+1. Animal Detection via MegaDetector — *completed in 2026.07.28*
 2. Species identification via SpeciesNet — *completed in 2026.08.06*
-3. Thermal video decoding and frame extraction; ML core and inference lifted out
-   of the Django app into a standalone `inference` package — *completed in 2026.09.04*
-4. SORT tracking with a Kalman filter; per-track displacement and deformation
-   signals — *completed in 2026.09.04*
-5. Activity bouts from stored motion signals, with hysteresis, gap bridging and a
-   sensitivity sweep — *completed in 2026.09.04*
-6. One representative frame per track, selected online during the decode pass and
-   routed into the existing image species queue — *completed in 2026.09.04*
-7. Package split: `core` (models) ← `inference` (no Django) ← `image` / `video`,
-   with the dependency arrows enforced by a test — *completed in 2026.09.04*
-8. Measure Detector throughput: A 12 h night takes 5.5 h, with
-   `golden_value/benchmark_hot_path.py` on the pet set (M-series MPS, 5 fps
-   sampling): decode and sampling run at ~325 fps, 60x realtime and 3% of loop
-   time, while the detector forward pass is 88 ms/frame and the other 97%.
-   — *completed in 2026.09.07*
-9. Replace SORT with ByteTrack: keep low-confidence detections for a second
-   association pass, which is where SORT loses animals to partial occlusion.
-   See updates on `tracking.py` — *completed in 2026.09.07*
-10. Pet-set validation run end to end. — *completed in 2026.09.07*
+3. Image processing — *completed in 2026.08.12*
+4. Video decoding and frame extraction, Animal Tracking with **SORT and Kalman filter**,
+   Activity bouts and representative frame (active/rest) — *completed in 2026.09.04*
+5. Throughput measurement: 12 h video per 5.5 h. Decode and sampling run at ~325 fps,
+   the detector forward pass is 88 ms/frame — *completed in 2026.09.07*
+6. Replace SORT with **ByteTrack**: keep animals to partial occlusion — *completed in 2026.09.07*
+7. Pet-set validation run end to end. — *completed in 2026.09.07*
 
-> Event clustering over stills was built and then removed: grouping photos by
-> capture-time gap produced groupings with no biological meaning. Clustering
-> returns in M3, over tracks rather than images.
-
-### Next
+## Roadmap
 11. **Enhance Detector throughput.** Real batching means first fixing upstream's
    `batch_image_detection`, which divides x by the image *height* and y by the
    *width*. That leaves the model: quantisation, ONNX Runtime or CoreML, or a
    smaller variant.
-
 12. **TW-FINCH** cluster wildlife behaviors and naming with local VLM.
    Refer to: https://arxiv.org/abs/2103.11264
 13. Change-point detection over tracks, and event clustering built on it.
 
 
 ## First-time Use
+**Clone the project to your computer**
 
-Prereqs: `uv`, Docker Desktop.
-
-**Install Docker Desktop** (then sign in):
+**Mac OS Only**
+*Install Docker Desktop and sign in* https://www.docker.com/products/docker-desktop/
+open terminal, direct to your anidetector root folder, then
 ```bash
-brew install --cask docker
+cd <your anidetector root folder>
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**Start services (Postgres + Redis) with Docker Compose.** Compose and Django
-both read the same `.env`:
+**Linux OS Only**
 ```bash
-cp .env.example .env
-docker compose up -d          # starts anidetector-pg + anidetector-redis
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+cd <your anidetector root folder>
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**Install deps and set up the database:**
+**Windows Only**
+*Install Docker Desktop and sign in* https://www.docker.com/products/docker-desktop/
+```powershell
+cd <your anidetector root folder>
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**Close the terminal and open a new one**
+
+**Copy .env.example and change the Django key with yours** paste the key to DJANGO_SECRET_KEY
 ```bash
 uv sync                          # creates .venv, installs deps
+cp .env.example .env
+uv run python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+**Register a Django superadmin**
+
+**Start services (Postgres + Redis)**
+```bash
+docker compose up -d          # starts anidetector-pg + anidetector-redis
 uv run python manage.py migrate
 uv run python manage.py runserver
 ```
@@ -104,7 +98,10 @@ Success criterion: `docker compose up -d` brings both containers up, `migrate`
 completes, and `runserver` starts. The schema lives in `core/models.py`
 (see the diagram at the bottom).
 
-**Validate the detector in isolation (no Django):**
+
+## Validation
+
+**Validate the detector in isolation:**
 ```bash
 uv run python golden_value/try_models.py example_images/01.webp
 ```
@@ -114,13 +111,14 @@ uv run python golden_value/try_models.py example_images/01.webp
 uv run python golden_value/try_speciesnet.py example_images/01.webp --threshold 0.5
 ```
 
-**Measure the decode → detect throughput** (also no Django, no database). The
-recorded run is `golden_value/baseline_mps.json`; `--check` re-runs and fails if
+**(Optional) Measure the decode → detect throughput**
+The recorded run is `golden_value/baseline_mps.json`; `--check` re-runs and fails if
 throughput drops more than 20%, and refuses to compare across devices:
 ```bash
 uv run python golden_value/benchmark_hot_path.py <video> --device mps
 uv run python golden_value/benchmark_hot_path.py <video> --device mps --check golden_value/baseline_mps.json
 ```
+
 
 ## Daily Use
 
@@ -130,10 +128,11 @@ docker compose up -d                       # Postgres + Redis
 uv run python manage.py runserver          # Django on http://127.0.0.1:8000
 ```
 
-**Step 1 — create a Deployment.** Both pipelines hang off one: a camera at one
-location over one stretch of time. Camera id, location and country are human
-knowledge, not something a directory tree carries, so nothing infers them.
-Create it in `/admin`, or:
+**Step 1 — create a Deployment in admin**
+http://127.0.0.1:8000/admin
+Sign in with your superadmin account (see First-time Use if you don't have one)
+Click "+Add" button behind Deployment
+Or:
 ```bash
 uv run python manage.py shell -c "
 from django.utils import timezone
@@ -144,6 +143,13 @@ print(Deployment.objects.create(
 ).id)"
 ```
 
+**Step 2 — open the home page**
+http://127.0.0.1:8000
+Follow the instruction to process videos or image
+
+
+## Custom Use (Hack)
+
 **Step 2a — images:**
 ```bash
 uv run python manage.py ingest <folder> --deployment <id>   # detect + persist
@@ -152,6 +158,11 @@ uv run python manage.py classify_species                    # SpeciesNet on anim
 `ingest` takes `--retry-failed` to redo failures, `--limit` to cap new rows.
 
 **Step 2b — video:**
+Quick start:
+```bash
+uv run python manage.py quickstart <folder> --deployment <id>
+```
+Custom:
 ```bash
 uv run python manage.py register_video <folder> --deployment <id>
 uv run python manage.py process_video                       # decode -> tracks + signals
@@ -197,6 +208,57 @@ uv run python manage.py classify_species --async     # enqueue instead of runnin
 - `http://127.0.0.1:8000/api/video/tracks/<id>/behaviour/active.jpg` — a
   representative frame for the moving (or `rest.jpg`, resting) behaviour, extracted
   on demand for the thresholds in the query string and cached against them
+
+
+## Architecture
+
+**Images** -> ingest a folder -> MegaDetectorV6 (via PytorchWildlife) detect -> filter blank
+frames -> SpeciesNet classification.
+
+**Video** -> register a folder -> decode with PyAV and sample -> MegaDetectorV6 detect 
+-> ByteTrack animal tracking and per-track motion signals  -> SpeciesNet classification
+-> activity bouts.
+
+Both persist to PostgreSQL and are exposed over a DRF API plus a minimal results page.
+
+Required Dependencies: Django + DRF · PostgreSQL · PytorchWildlife/MegaDetectorV6 · SpeciesNet ·
+PyAV · supervision · Pillow · NumPy · Celery + Redis · uv · Docker.
+
+```mermaid
+flowchart LR
+   subgraph Inputs["📷 Camera‑Trap Inputs"]
+       IMG[Image Folder]
+       VID[Video Folder]
+   end
+   %% Image path
+   IMG -->|Ingest| PRE_IMG[Filter blank frames]
+   %% Video path
+   VID -->|PyAV Decode & Sample| PRE_VID[ByteTrack + Motion signals]
+   %% Shared detection step: single MegaDetectorV6
+   PRE_IMG & PRE_VID --> MD[MegaDetectorV6<br/>Detection]
+   %% Single unified Celery task queue
+   MD -->|Enqueue animal boxes / track representative frames| CELERY[Celery Task]
+   CELERY --> SN[SpeciesNet<br/>Species Classification]
+   %% Storage
+   SN --> DB[(PostgreSQL)]
+   DB --> DRF[DRF API]
+   %% Image result path
+   DRF --> WEB_IMG[Web Image Result]
+   %% Video: activity bouts computed on‑the‑fly at query time
+   DRF -->|On‑demand calculation<br/>Activity bouts| WEB_VID[Web Video Result]
+   subgraph Backend["⚙️ Backend Infrastructure"]
+       REDIS[Redis • Celery Broker]
+   end
+   CELERY <--> REDIS
+   classDef input fill:#e8f4f8,stroke:#2385bb
+   classDef ai fill:#eaf8ea,stroke:#34a853
+   classDef store fill:#fff6e6,stroke:#f29900
+   classDef infra fill:#f3e8fc,stroke:#9c27b0
+   class IMG,VID input
+   class MD,PRE_IMG,PRE_VID,SN ai
+   class DB store
+   class REDIS,DRF,WEB_IMG,WEB_VID infra
+```
 
 ## Package layout
 
