@@ -18,11 +18,11 @@ future with VLM named clusters).
   </tr>
   <tr>
     <td align="center">
-      <img src="./asset/video.jpeg" width="400"/><br/>
+      <img src="./asset/video.jpg" width="400"/><br/>
       <sub>video</sub>
     </td>
     <td align="center">
-      <img src="./asset/track_detail.jpeg" width="400"/><br/>
+      <img src="./asset/track_detail.jpg" width="400"/><br/>
       <sub>track detail</sub>
     </td>
   </tr>
