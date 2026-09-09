@@ -41,12 +41,12 @@ future with VLM named clusters).
 7. Pet-set validation run end to end. — *completed in 2026.09.07*
 
 ## Roadmap
-11. **Enhance Detector throughput.** Real batching means first fixing upstream's
+11. **TW-FINCH** cluster wildlife behaviors and naming with local VLM.
+   Refer to: https://arxiv.org/abs/2103.11264
+12. **Enhance Detector throughput.** Real batching means first fixing upstream's
    `batch_image_detection`, which divides x by the image *height* and y by the
    *width*. That leaves the model: quantisation, ONNX Runtime or CoreML, or a
    smaller variant.
-12. **TW-FINCH** cluster wildlife behaviors and naming with local VLM.
-   Refer to: https://arxiv.org/abs/2103.11264
 13. Change-point detection over tracks, and event clustering built on it.
 
 
